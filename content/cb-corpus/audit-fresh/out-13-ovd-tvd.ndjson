@@ -1,0 +1,136 @@
+{"id":"6670e407","sub_skills":["OVD.10","OVD.7","OVD.8"],"clusters":["CL.0256","CL.0257","CL.0255"],"distractors":[],"why":"Compare means and medians of two schools from table; compute both statistics then compare."}
+{"id":"869a32f1","sub_skills":["OVD.9","OVD.7","OVD.8"],"clusters":["CL.0258","CL.0256","CL.0257"],"distractors":[],"why":"Identify which statistic is NOT 81; range=2 is the outlier among mean, median, mode all equaling 81."}
+{"id":"a9647302","sub_skills":["OVD.7","OVD.6"],"clusters":["CL.0255","CL.0256"],"distractors":[],"why":"Read defective counts from bar graph then compute mean of 5 values."}
+{"id":"a067c926","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read two bar heights and subtract to find difference between August and July births."}
+{"id":"93779b53","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read a single bar height from graph to find count for one activity."}
+{"id":"79340403","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read a single bar height to find books collected by one group."}
+{"id":"57f45509","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read the median line directly from a box plot; no computation needed."}
+{"id":"57481175","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read two bar heights from graph and subtract to find how many more vervets than mandrills."}
+{"id":"4bb25495","sub_skills":["OVD.7","OVD.6"],"clusters":["CL.0255","CL.0256"],"distractors":[],"why":"Read land areas from table, sum all five, divide by 5 to get mean."}
+{"id":"6e3ab4bf","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read bar height for gift C directly from graph."}
+{"id":"820d7a73","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read bar height for one group from bar graph."}
+{"id":"55cfaf22","sub_skills":["OVD.7","OVD.10"],"clusters":["CL.0256"],"distractors":[],"why":"Compute means of two data sets and compare which is greater."}
+{"id":"d1db8def","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read two frequency values from table and add them."}
+{"id":"66f03086","sub_skills":["OVD.8"],"clusters":["CL.0257"],"distractors":[],"why":"Order values and locate the middle value to find median."}
+{"id":"c54b92a2","sub_skills":["OVD.9"],"clusters":["CL.0258"],"distractors":[],"why":"Find max (24) minus min (19) = 5 for range of wheels made."}
+{"id":"374b18f9","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read the median line directly from box plot of acres."}
+{"id":"7760c516","sub_skills":["OVD.7"],"clusters":["CL.0256"],"distractors":[],"why":"Sum plant heights and divide by count to compute mean."}
+{"id":"708590d7","sub_skills":["OVD.7","OVD.10"],"clusters":["CL.0256"],"distractors":[],"why":"Compute means of data sets A and B then compare."}
+{"id":"fa7a0164","sub_skills":["OVD.7","OVD.6"],"clusters":["CL.0255","CL.0256"],"distractors":[],"why":"Read low temperatures from table then compute their mean."}
+{"id":"bfa8a85c","sub_skills":["OVD.8"],"clusters":["CL.0257"],"distractors":[],"why":"Find median of given set, then check which answer list has the same median."}
+{"id":"4b09f783","sub_skills":["OVD.7"],"clusters":["CL.0256"],"distractors":[],"why":"Sum all data values and divide by count to find mean."}
+{"id":"ea95087d","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read two values from table and subtract to find difference."}
+{"id":"12dae628","sub_skills":["OVD.7"],"clusters":["CL.0256"],"distractors":[],"why":"Sum data values and divide by count to compute mean."}
+{"id":"35bec412","sub_skills":["OVD.8"],"clusters":["CL.0257"],"distractors":[],"why":"Order the values and locate the middle position to find median."}
+{"id":"c3d65f93","sub_skills":["OVD.11"],"clusters":["CL.0262","CL.0256"],"distractors":[],"why":"Determine how adding a sixth nest changes the mean; compare original and new means."}
+{"id":"80f1f3a9","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read bar graph to find which color appears a specified number of times."}
+{"id":"fe6a49d6","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read frequency bar for a specific walnut count from histogram."}
+{"id":"c88e0663","sub_skills":["OVD.7"],"clusters":["CL.0263"],"distractors":["CL.0257"],"why":"Identify that mean (total/count) is calculable from given info; median, max, min are not."}
+{"id":"8736334b","sub_skills":["OVD.12"],"clusters":["CL.0259"],"distractors":[],"why":"Set up mean equation for both data sets equal, solve for unknown x."}
+{"id":"15d87c0f","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read two bar heights and subtract to find difference."}
+{"id":"52f9a246","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Count frequencies of each value in the data to match the correct frequency table."}
+{"id":"29fa7970","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read bar height for a specific charge value from histogram."}
+{"id":"f890dc20","sub_skills":["OVD.8"],"clusters":["CL.0257"],"distractors":[],"why":"Order seven values and locate the 4th (middle) value as the median."}
+{"id":"25fc031a","sub_skills":["OVD.13"],"clusters":["CL.0261"],"distractors":[],"why":"Visually compare spread of two histograms to determine which has greater standard deviation."}
+{"id":"8193e8cd","sub_skills":["OVD.7"],"clusters":["CL.0256"],"distractors":[],"why":"Mean = sum/n, so mean/sum = 1/n; conceptual understanding of mean as a fraction of the sum."}
+{"id":"9e2bf782","sub_skills":["OVD.8"],"clusters":["CL.0257"],"distractors":[],"why":"Identify median position (17th of 33 fish) falls in tank B (positions 11-21), so median is between 5 and 13 oz."}
+{"id":"881ef5f5","sub_skills":["OVD.7","OVD.8","OVD.10"],"clusters":["CL.0256","CL.0257"],"distractors":[],"why":"For consecutive integers mean equals median; difference is zero."}
+{"id":"9110c120","sub_skills":["OVD.10"],"clusters":["CL.0256","CL.0257"],"distractors":[],"why":"Compute means and medians of both data sets and compare each."}
+{"id":"5c3c2e3c","sub_skills":["OVD.11"],"clusters":["CL.0262"],"distractors":[],"why":"Correcting the lowest weight changes mean, range, and SD but leaves median unchanged."}
+{"id":"f52123e0","sub_skills":["OVD.9"],"clusters":["CL.0258"],"distractors":[],"why":"Find maximum minus minimum of the scores."}
+{"id":"d94018fd","sub_skills":["OVD.13"],"clusters":["CL.0261"],"distractors":[],"why":"Compare spread of two dot plot distributions to determine which has greater standard deviation."}
+{"id":"560fab82","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read the smallest value with nonzero frequency from the frequency table."}
+{"id":"be00d896","sub_skills":["OVD.10"],"clusters":["CL.0261"],"distractors":["CL.0256"],"why":"Identify which data set is right-skewed (mean > median); exponential-growth set C has strong right skew."}
+{"id":"7b65bb28","sub_skills":["OVD.8"],"clusters":["CL.0257"],"distractors":[],"why":"Sort five gas prices and pick the middle (3rd) value as median."}
+{"id":"a29e89fc","sub_skills":["OVD.7"],"clusters":["CL.0256"],"distractors":[],"why":"Sum marmot masses and divide by count to find mean."}
+{"id":"578e26ae","sub_skills":["OVD.11"],"clusters":["CL.0262"],"distractors":[],"why":"Adding a constant shifts median by that constant; range is unchanged since all values shift equally."}
+{"id":"07f2829b","sub_skills":["OVD.8","OVD.6"],"clusters":["CL.0255","CL.0257"],"distractors":[],"why":"Read arrivals from table, sort each year's 9 values, find medians, subtract."}
+{"id":"d0efc1dd","sub_skills":["OVD.12","OVD.8"],"clusters":["CL.0259","CL.0257"],"distractors":[],"why":"Set mean equal to median; solve algebraically to find which x values work, identify the one that does not."}
+{"id":"3f2ee20a","sub_skills":["OVD.13","OVD.10"],"clusters":["CL.0261"],"distractors":[],"why":"Same mean but different SD means Group B has larger spread; cannot conclude about tallest or median."}
+{"id":"a456cfd2","sub_skills":["OVD.6"],"clusters":["CL.0255"],"distractors":[],"why":"Read the largest value with nonzero frequency from the frequency table."}
+{"id":"a5b069b4","sub_skills":["OVD.8"],"clusters":["CL.0257"],"distractors":[],"why":"Order 8 values and average the 4th and 5th to find median."}
+{"id":"4c774b00","sub_skills":["OVD.7","OVD.8","OVD.10"],"clusters":["CL.0256","CL.0257","CL.0261"],"distractors":[],"why":"Compute mean, median, and mode from frequency table; right-tail outlier (age 30) pulls mean above median above mode."}
+{"id":"94237701","sub_skills":["OVD.8"],"clusters":["CL.0257","CL.0255"],"distractors":[],"why":"Expand frequency table into ordered lists, locate median position in each group, subtract."}
+{"id":"54d93874","sub_skills":["OVD.12"],"clusters":["CL.0259"],"distractors":[],"why":"Set Maria's mean = Andrew's mean + 0.1, solve for unknown x using the mean equation."}
+{"id":"9d935bd8","sub_skills":["OVD.8"],"clusters":["CL.0257"],"distractors":[],"why":"Find median of 7 states' percentages and subtract the given 50-state median."}
+{"id":"2a59eb45","sub_skills":["OVD.12"],"clusters":["CL.0260"],"distractors":[],"why":"Combine two data sets using weighted average formula: (n1*m1 + n2*m2)/(n1+n2)."}
+{"id":"391ae4b2","sub_skills":["OVD.11"],"clusters":["CL.0262"],"distractors":[],"why":"Determine if adding a specific integer must increase the mean and/or median of the data set."}
+{"id":"98958ae8","sub_skills":["OVD.12"],"clusters":["CL.0260"],"distractors":[],"why":"Combine two data sets using weighted average: (n1*m1 + n2*m2)/(n1+n2)."}
+{"id":"4626102e","sub_skills":["OVD.11"],"clusters":["CL.0262"],"distractors":[],"why":"Adding a constant shifts median up by that amount; range stays the same."}
+{"id":"4ff597db","sub_skills":["OVD.12"],"clusters":["CL.0259"],"distractors":[],"why":"Use total = n*mean before and after removing one person; difference gives leaving employee's years."}
+{"id":"bf47ad54","sub_skills":["OVD.7"],"clusters":["CL.0256","CL.0255"],"distractors":[],"why":"Compute weighted mean from each frequency table and compare which is greatest."}
+{"id":"e7d48c8a","sub_skills":["OVD.11"],"clusters":["CL.0262"],"distractors":[],"why":"Adding a data point; determine whether it increases the mean and/or median relative to original."}
+{"id":"1e8ccffd","sub_skills":["OVD.12"],"clusters":["CL.0259"],"distractors":[],"why":"Total = 8*14.5 = 116; after removal 7*12 = 84; highest = 116-84 = 32."}
+{"id":"1142af44","sub_skills":["OVD.7","OVD.8","OVD.10"],"clusters":["CL.0256","CL.0257","CL.0261"],"distractors":[],"why":"Symmetric frequency distribution (a,2a,3a,2a,a) means mean equals median; difference is 0."}
+{"id":"f8a322d9","sub_skills":["OVD.7","OVD.10"],"clusters":["CL.0256"],"distractors":[],"why":"Find means from histograms minimizing the difference by choosing values within each interval optimally."}
+{"id":"ecbdbe84","sub_skills":["OVD.8"],"clusters":["CL.0257"],"distractors":[],"why":"Use cumulative frequency from grouped table to locate median position and determine possible value."}
+{"id":"241f1db7","sub_skills":["OVD.11"],"clusters":["CL.0262"],"distractors":[],"why":"Adding a data value; determine if it pulls mean and/or median up or down relative to originals."}
+{"id":"d65b9a87","sub_skills":["OVD.10","OVD.13"],"clusters":["CL.0261"],"distractors":[],"why":"Compare medians and standard deviations of two dot plot distributions to identify which statements must be true."}
+{"id":"6c9444cd","sub_skills":["OVD.9","OVD.6"],"clusters":["CL.0258","CL.0255"],"distractors":[],"why":"Read max and min from each box plot, compute each range, find the positive difference."}
+{"id":"457d2f2c","sub_skills":["OVD.11"],"clusters":["CL.0262"],"distractors":[],"why":"Adding 7 above median and subtracting 7 below: mean and sum unchanged, median unchanged, but SD increases."}
+{"id":"c178d4da","sub_skills":["OVD.7","OVD.10"],"clusters":["CL.0256"],"distractors":[],"why":"Compute weighted means from two frequency tables and compare."}
+{"id":"190be2fc","sub_skills":["OVD.12"],"clusters":["CL.0259"],"distractors":[],"why":"Given 9 of 10 values and the mean, solve for the 10th; constraint that mean is an integer above a threshold pins the answer."}
+{"id":"d3b9c8d8","sub_skills":["OVD.10"],"clusters":["CL.0261","CL.0255"],"distractors":[],"why":"Read medians from box plots and compare; median comparison is the only must-be-true statement from box plots alone."}
+{"id":"cf0ae57a","sub_skills":["TVD.7"],"clusters":["CL.0270"],"distractors":[],"why":"Use line of best fit to predict density at x=1.2 AU by reading the y-value on the line."}
+{"id":"8d63b6f1","sub_skills":["TVD.6"],"clusters":["CL.0264"],"distractors":[],"why":"Read the y-coordinate (offspring count) for the specific weight point directly from scatterplot."}
+{"id":"39aa146d","sub_skills":["TVD.8"],"clusters":["CL.0265"],"distractors":[],"why":"Pick two points on the line of best fit and compute rise over run."}
+{"id":"bc59c2d9","sub_skills":["TVD.7"],"clusters":["CL.0270"],"distractors":[],"why":"Trace x-value on line of best fit to predict temperature at given distance above sea level."}
+{"id":"a03b7e02","sub_skills":["TVD.10"],"clusters":["CL.0267"],"distractors":[],"why":"Examine table values to determine if changes are constant (linear) or multiplicative (exponential), and direction."}
+{"id":"661dfddd","sub_skills":["TVD.10"],"clusters":["CL.0266"],"distractors":[],"why":"Identify negative association: as elevation increases, temperature decreases."}
+{"id":"5f3ee607","sub_skills":["TVD.9"],"clusters":["CL.0266"],"distractors":[],"why":"Determine slope sign and approximate y-intercept from scatterplot to select the correct linear equation."}
+{"id":"5c24c861","sub_skills":["TVD.7"],"clusters":["CL.0270"],"distractors":[],"why":"Use the quadratic model curve to predict stopping distance at 55 mph."}
+{"id":"d112bc9d","sub_skills":["TVD.11","TVD.6"],"clusters":["CL.0271","CL.0264"],"distractors":[],"why":"Read temperatures at interval endpoints and compare increases across time periods."}
+{"id":"8156d446","sub_skills":["TVD.7"],"clusters":["CL.0270"],"distractors":[],"why":"Use line of best fit to predict number of visitors at 32 degrees C."}
+{"id":"c141366d","sub_skills":["TVD.10"],"clusters":["CL.0267"],"distractors":[],"why":"Identify function type from graph shape as increasing/decreasing and linear/exponential."}
+{"id":"2e511919","sub_skills":["TVD.6"],"clusters":["CL.0264"],"distractors":[],"why":"Read the highest point on the line graph to find the year with greatest estimated chipmunk count."}
+{"id":"b58dbf88","sub_skills":["TVD.6"],"clusters":["CL.0264"],"distractors":[],"why":"Read y-coordinate at specific x-value (growing season) from scatterplot."}
+{"id":"d6121490","sub_skills":["TVD.6"],"clusters":["CL.0264"],"distractors":[],"why":"Read braking distances at 50 and 30 mph from graph and subtract."}
+{"id":"9296553d","sub_skills":["TVD.9"],"clusters":["CL.0266"],"distractors":[],"why":"Determine slope direction and approximate intercept from scatterplot to choose correct equation."}
+{"id":"43744269","sub_skills":["TVD.10"],"clusters":["CL.0267"],"distractors":[],"why":"Constant rate of descent is linear and decreasing."}
+{"id":"c5ee6ac0","sub_skills":["TVD.9"],"clusters":["CL.0266"],"distractors":[],"why":"Identify slope and y-intercept from line of best fit to select matching equation."}
+{"id":"ae32cc3c","sub_skills":["TVD.7"],"clusters":["CL.0270"],"distractors":[],"why":"Read y-value from line of best fit at specified x-value."}
+{"id":"16988f9c","sub_skills":["TVD.9"],"clusters":["CL.0266"],"distractors":[],"why":"Determine slope sign and intercept from scatterplot to select the most appropriate linear equation."}
+{"id":"a6b2fcce","sub_skills":["TVD.11","TVD.6"],"clusters":["CL.0271","CL.0264"],"distractors":[],"why":"Read values at consecutive years, compute change for each pair, identify greatest change."}
+{"id":"c9dd92b1","sub_skills":["TVD.7"],"clusters":["CL.0270"],"distractors":[],"why":"Use scatterplot trend to predict density at 60% concentration."}
+{"id":"13f67ddc","sub_skills":["TVD.6"],"clusters":["CL.0264"],"distractors":[],"why":"Read the y-value at a specific x-value from the line graph."}
+{"id":"d230e963","sub_skills":["TVD.9"],"clusters":["CL.0266"],"distractors":[],"why":"Identify slope and intercept from line of best fit to select correct equation."}
+{"id":"9d88a3e3","sub_skills":["TVD.6"],"clusters":["CL.0264"],"distractors":[],"why":"Read and interpret multiple features of a speed-time graph to identify the false statement."}
+{"id":"74dee52b","sub_skills":["TVD.6"],"clusters":["CL.0264"],"distractors":[],"why":"Read the minimum point on the line graph to find which class had fewest graduates."}
+{"id":"15ce8207","sub_skills":["TVD.10"],"clusters":["CL.0267"],"distractors":[],"why":"Examine scatterplot pattern and select which graph shows the most appropriate model shape."}
+{"id":"4a2264b3","sub_skills":["TVD.6"],"clusters":["CL.0264"],"distractors":[],"why":"Read the minimum point on the line graph to find which model year has smallest percent."}
+{"id":"ac5b6558","sub_skills":["TVD.7"],"clusters":["CL.0270"],"distractors":[],"why":"Use line of best fit to predict temperature at 8500 feet elevation."}
+{"id":"8baf2118","sub_skills":["TVD.9"],"clusters":["CL.0266"],"distractors":[],"why":"Determine slope and intercept from line of best fit to select correct equation."}
+{"id":"83272c51","sub_skills":["TVD.11"],"clusters":["CL.0271","CL.0264"],"distractors":[],"why":"Compute rate of temperature decrease in each 10-minute interval and identify the greatest."}
+{"id":"82aaa0a1","sub_skills":["TVD.9"],"clusters":["CL.0266"],"distractors":[],"why":"Match scatterplot pattern to the best equation among choices."}
+{"id":"1adb39f0","sub_skills":["TVD.12"],"clusters":["CL.0268"],"distractors":[],"why":"Find actual y-value at given x and subtract the predicted y from line of best fit to get residual."}
+{"id":"9bb4107c","sub_skills":["TVD.11"],"clusters":["CL.0271"],"distractors":[],"why":"Compute (momentum2 - momentum1)/(t2 - t1) for average rate of change."}
+{"id":"2e74e403","sub_skills":["TVD.8"],"clusters":["CL.0265"],"distractors":[],"why":"Pick two points on the line of best fit and compute rise over run for slope."}
+{"id":"9a144a01","sub_skills":["TVD.10"],"clusters":["CL.0267"],"distractors":[],"why":"Compare growth patterns of two functions to determine where one exceeds the other."}
+{"id":"e24765e6","sub_skills":["TVD.11","TVD.6"],"clusters":["CL.0271","CL.0264"],"distractors":[],"why":"Read temperatures at two times from scatterplot and compute rate of change per minute."}
+{"id":"03a16790","sub_skills":["TVD.8"],"clusters":["CL.0265"],"distractors":[],"why":"Pick two points on line of best fit and compute rise/run for slope."}
+{"id":"f46139df","sub_skills":["TVD.7"],"clusters":["CL.0270"],"distractors":[],"why":"Read the predicted y-value from line of best fit at given x."}
+{"id":"7ac5d686","sub_skills":["TVD.10"],"clusters":["CL.0267"],"distractors":[],"why":"Constant work rate with decreasing remaining shirts is a linear model with negative slope."}
+{"id":"7fd284ac","sub_skills":["TVD.12"],"clusters":["CL.0268"],"distractors":[],"why":"Find the data point with greatest x-value, read its actual y, subtract predicted y from line of best fit."}
+{"id":"e17babed","sub_skills":["TVD.12"],"clusters":["CL.0268"],"distractors":[],"why":"Count data points lying above the line of best fit where actual y exceeds predicted y."}
+{"id":"3d985614","sub_skills":["TVD.9"],"clusters":["CL.0265","CL.0266"],"distractors":[],"why":"Estimate slope and intercept from scatterplot to select the correct linear equation."}
+{"id":"ad7dbb22","sub_skills":["TVD.12"],"clusters":["CL.0268"],"distractors":[],"why":"Count data points below the line of best fit where predicted y exceeds actual y."}
+{"id":"3c5b19ef","sub_skills":["TVD.9"],"clusters":["CL.0265","CL.0266"],"distractors":[],"why":"Estimate slope (negative trend) and intercept from museum visitor scatterplot to select equation."}
+{"id":"ab7740a8","sub_skills":["TVD.10"],"clusters":["CL.0267"],"distractors":[],"why":"Examine differences and ratios in table values to determine which relationship is nonlinear."}
+{"id":"90ba8f98","sub_skills":["TVD.8"],"clusters":["CL.0265"],"distractors":[],"why":"Pick two points on line of best fit and compute rise/run."}
+{"id":"9eb896c5","sub_skills":["TVD.9"],"clusters":["CL.0266"],"distractors":[],"why":"Determine slope sign and intercept from scatterplot to select matching equation."}
+{"id":"4cc05491","sub_skills":["TVD.8"],"clusters":["CL.0265"],"distractors":[],"why":"Pick two points on line of best fit and compute rise/run for slope."}
+{"id":"fdfc90e4","sub_skills":["TVD.7"],"clusters":["CL.0270"],"distractors":[],"why":"Read predicted y-value from line of best fit at specified x."}
+{"id":"50b2807e","sub_skills":["TVD.9"],"clusters":["CL.0266"],"distractors":[],"why":"Determine slope and intercept from scatterplot to choose most appropriate linear equation."}
+{"id":"24a1e6a7","sub_skills":["TVD.8"],"clusters":["CL.0265"],"distractors":[],"why":"Pick two points on line of best fit and compute rise/run."}
+{"id":"58171b5e","sub_skills":["TVD.10"],"clusters":["CL.0267"],"distractors":[],"why":"Constant percentage increase each year is increasing exponential."}
+{"id":"fb866265","sub_skills":["TVD.14"],"clusters":["CL.0272"],"distractors":[],"why":"Fit exponential model y=a*b^x to scatterplot data; determine base b from growth pattern."}
+{"id":"2e8027b0","sub_skills":["TVD.9"],"clusters":["CL.0265","CL.0266"],"distractors":[],"why":"Multiplying all y-values by a constant scales slope and intercept; select the transformed equation."}
+{"id":"d6af3572","sub_skills":["TVD.13"],"clusters":["CL.0269"],"distractors":[],"why":"Interpret slope of best-fit line in context: slope per unit x gives average increase per year."}
+{"id":"1e1027a7","sub_skills":["TVD.9"],"clusters":["CL.0265","CL.0266"],"distractors":[],"why":"Estimate positive slope and intercept from ice cream sales scatterplot to select equation."}
+{"id":"d0430601","sub_skills":["TVD.13"],"clusters":["CL.0269"],"distractors":[],"why":"Interpret slope: 57 people per degree C times 5 degrees = 285 additional people."}
+{"id":"7b52985c","sub_skills":["TVD.11"],"clusters":["CL.0271","CL.0264"],"distractors":[],"why":"Read flight times at two dates from scatterplot and compute average rate of change."}
+{"id":"e821a26d","sub_skills":["TVD.9"],"clusters":["CL.0266"],"distractors":[],"why":"Match scatterplot trend of nuclear energy data to the best-fitting equation among choices."}
+{"id":"79137c1b","sub_skills":["TVD.9"],"clusters":["CL.0265","CL.0266"],"distractors":[],"why":"Estimate slope and intercept from house size vs price scatterplot to select equation."}
+{"id":"9b5b23fc","sub_skills":["TVD.10"],"clusters":["CL.0267"],"distractors":[],"why":"Determine function type from verbal description of how output relates to input."}
+{"id":"af142f8d","sub_skills":["TVD.10"],"clusters":["CL.0267"],"distractors":[],"why":"Compare exponential growth (6% compound) vs linear growth ($25/year); exponential starts higher and accelerates."}
+{"id":"9d95e7ad","sub_skills":["TVD.8","TVD.13"],"clusters":["CL.0265","CL.0269"],"distractors":[],"why":"Estimate slope of best-fit line and interpret as predicted fat increase per gram of protein."}

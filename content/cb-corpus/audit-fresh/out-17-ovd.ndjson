@@ -1,0 +1,73 @@
+{"id": "6670e407", "sub_skills": ["OVD.5", "OVD.7", "OVD.8"], "clusters": ["CL.0026", "CL.0062", "CL.0153"], "distractors": [], "why": "Compare mean and median across two data sets from table; compute both statistics then compare."}
+{"id": "869a32f1", "sub_skills": ["OVD.2", "OVD.9"], "clusters": ["CL.0026", "CL.0062", "CL.0027"], "distractors": [], "why": "Compute mean, median, mode, and range from a small data set; range (2) is the only one not equal to 81."}
+{"id": "a9647302", "sub_skills": ["OVD.7", "OVD.6"], "clusters": ["CL.0026", "CL.0072", "CL.0161"], "distractors": [], "why": "Read bar graph values then compute the mean (sum/count)."}
+{"id": "a067c926", "sub_skills": ["OVD.6"], "clusters": ["CL.0072", "CL.0161"], "distractors": [], "why": "Read two bar heights and subtract; pure data-display reading, no statistical computation."}
+{"id": "93779b53", "sub_skills": ["OVD.6"], "clusters": ["CL.0072", "CL.0161"], "distractors": [], "why": "Read a single bar value from graph; straightforward display reading."}
+{"id": "79340403", "sub_skills": ["OVD.6"], "clusters": ["CL.0072", "CL.0161"], "distractors": [], "why": "Read a single value from a bar graph."}
+{"id": "57f45509", "sub_skills": ["OVD.6"], "clusters": ["CL.0070"], "distractors": [], "why": "Read the median directly from a box plot's five-number summary."}
+{"id": "57481175", "sub_skills": ["OVD.6"], "clusters": ["CL.0072", "CL.0161"], "distractors": [], "why": "Read two bar values and subtract; display reading."}
+{"id": "4bb25495", "sub_skills": ["OVD.7"], "clusters": ["CL.0026", "CL.0153"], "distractors": [], "why": "Read values from table and compute mean (sum/count)."}
+{"id": "6e3ab4bf", "sub_skills": ["OVD.6"], "clusters": ["CL.0072", "CL.0161"], "distractors": [], "why": "Read a single bar value from graph."}
+{"id": "820d7a73", "sub_skills": ["OVD.6"], "clusters": ["CL.0072", "CL.0161"], "distractors": [], "why": "Read a single value from a bar graph."}
+{"id": "55cfaf22", "sub_skills": ["OVD.5", "OVD.7"], "clusters": ["CL.0026"], "distractors": [], "why": "Compute means of two data sets and compare them."}
+{"id": "d1db8def", "sub_skills": ["OVD.6"], "clusters": ["CL.0072", "CL.0153"], "distractors": [], "why": "Read and add frequencies from a table; no statistical computation."}
+{"id": "66f03086", "sub_skills": ["OVD.8"], "clusters": ["CL.0062"], "distractors": [], "why": "Order data and find the middle value (median)."}
+{"id": "c54b92a2", "sub_skills": ["OVD.9"], "clusters": ["CL.0027", "CL.0153"], "distractors": [], "why": "Read values from table and compute range (max - min = 24 - 19 = 5)."}
+{"id": "374b18f9", "sub_skills": ["OVD.6"], "clusters": ["CL.0070"], "distractors": [], "why": "Read the median from a box plot's five-number summary."}
+{"id": "7760c516", "sub_skills": ["OVD.7"], "clusters": ["CL.0026"], "distractors": [], "why": "Sum data values and divide by count to compute the mean."}
+{"id": "708590d7", "sub_skills": ["OVD.5", "OVD.7"], "clusters": ["CL.0026"], "distractors": [], "why": "Compute means of two data sets and compare."}
+{"id": "fa7a0164", "sub_skills": ["OVD.7"], "clusters": ["CL.0026", "CL.0153"], "distractors": [], "why": "Read low temperatures from table and compute their mean."}
+{"id": "bfa8a85c", "sub_skills": ["OVD.8"], "clusters": ["CL.0062"], "distractors": [], "why": "Find the median of the given set and each answer choice; match medians."}
+{"id": "4b09f783", "sub_skills": ["OVD.7"], "clusters": ["CL.0026"], "distractors": [], "why": "Sum data values and divide by count."}
+{"id": "ea95087d", "sub_skills": ["OVD.6"], "clusters": ["CL.0072", "CL.0153"], "distractors": [], "why": "Read pre-computed averages from table and subtract; no statistical computation needed."}
+{"id": "12dae628", "sub_skills": ["OVD.7"], "clusters": ["CL.0026"], "distractors": [], "why": "Compute mean by summing values and dividing by count."}
+{"id": "35bec412", "sub_skills": ["OVD.8"], "clusters": ["CL.0062"], "distractors": [], "why": "Order data values and find the middle value."}
+{"id": "c3d65f93", "sub_skills": ["OVD.5", "OVD.7"], "clusters": ["CL.0026"], "distractors": [], "why": "Compute mean of original set, compute mean after adding a value, compare."}
+{"id": "80f1f3a9", "sub_skills": ["OVD.6"], "clusters": ["CL.0072", "CL.0161"], "distractors": [], "why": "Read bar graph to find which category has a specific frequency."}
+{"id": "fe6a49d6", "sub_skills": ["OVD.6"], "clusters": ["CL.0072", "CL.0161", "CL.0139"], "distractors": [], "why": "Read frequency from bar graph; must distinguish the number of walnuts (data value) from the number of containers (frequency)."}
+{"id": "c88e0663", "sub_skills": ["OVD.4"], "clusters": ["CL.0123"], "distractors": [], "why": "Use mean-total relationship: mean = total/count = 90/10 = 9. Only the average can be determined from total and count."}
+{"id": "8736334b", "sub_skills": ["OVD.12"], "clusters": ["CL.0123", "CL.0026"], "distractors": [], "why": "Set up equation: sum of set A / 5 = sum of set B / 5; solve for unknown x using mean-total relationship."}
+{"id": "15d87c0f", "sub_skills": ["OVD.6"], "clusters": ["CL.0072", "CL.0161"], "distractors": [], "why": "Read values from bar graph of student counts."}
+{"id": "52f9a246", "sub_skills": ["OVD.1"], "clusters": ["CL.0139"], "distractors": [], "why": "Construct frequency table from raw data; must correctly count occurrences of each value."}
+{"id": "29fa7970", "sub_skills": ["OVD.6"], "clusters": ["CL.0072", "CL.0161", "CL.0139"], "distractors": [], "why": "Read frequency from bar graph; distinguish charge value (x-axis) from number of days (y-axis/frequency)."}
+{"id": "f890dc20", "sub_skills": ["OVD.8"], "clusters": ["CL.0062"], "distractors": [], "why": "Order 7 data values and select the 4th (middle) value."}
+{"id": "25fc031a", "sub_skills": ["OVD.13"], "clusters": ["CL.0134", "CL.0161"], "distractors": [], "why": "Compare standard deviations visually from histograms; more spread-out distribution has larger SD."}
+{"id": "8193e8cd", "sub_skills": ["OVD.4"], "clusters": ["CL.0123"], "distractors": [], "why": "Apply mean = sum/n; mean/sum = 1/n = 1/5. Tests understanding of mean-total relationship."}
+{"id": "9e2bf782", "sub_skills": ["OVD.8"], "clusters": ["CL.0111", "CL.0062"], "distractors": [], "why": "Median is 17th of 33 values; 10 in tank A, 11 in B, 12 in C. Position 17 falls in tank B (5-13oz). Answer: 8."}
+{"id": "881ef5f5", "sub_skills": ["OVD.10"], "clusters": ["CL.0026", "CL.0062"], "distractors": [], "why": "For 9 consecutive integers, mean equals median. So a/b = 1 (or a-b = 0)."}
+{"id": "9110c120", "sub_skills": ["OVD.5", "OVD.7", "OVD.8"], "clusters": ["CL.0026", "CL.0062"], "distractors": [], "why": "Compute both mean and median for each data set and compare all four values."}
+{"id": "5c3c2e3c", "sub_skills": ["OVD.11"], "clusters": ["CL.0183"], "distractors": [], "why": "Changing the minimum value affects mean, range, and SD. Median (8th of 15 values) is unaffected by changing an extreme value."}
+{"id": "f52123e0", "sub_skills": ["OVD.9"], "clusters": ["CL.0027"], "distractors": [], "why": "Compute range = max - min from given data values."}
+{"id": "d94018fd", "sub_skills": ["OVD.13"], "clusters": ["CL.0134"], "distractors": [], "why": "Compare standard deviations visually from dot plots; more spread-out distribution has larger SD."}
+{"id": "560fab82", "sub_skills": ["OVD.1"], "clusters": ["CL.0139", "CL.0072"], "distractors": [], "why": "Read frequency table to find the minimum data value (not frequency); distinguish value from frequency."}
+{"id": "be00d896", "sub_skills": ["OVD.10"], "clusters": ["CL.0183", "CL.0026", "CL.0062"], "distractors": [], "why": "Must identify which data set is right-skewed (high outliers pull mean above median). Set C is exponentially growing -> mean > median."}
+{"id": "7b65bb28", "sub_skills": ["OVD.8"], "clusters": ["CL.0062", "CL.0153"], "distractors": [], "why": "Order 5 gas prices from table and select the middle (3rd) value."}
+{"id": "a29e89fc", "sub_skills": ["OVD.7"], "clusters": ["CL.0026"], "distractors": [], "why": "Sum given masses and divide by count to compute the mean."}
+{"id": "578e26ae", "sub_skills": ["OVD.11"], "clusters": ["CL.0175"], "distractors": [], "why": "Adding a constant to every value shifts median by that constant but preserves the range (spread is unchanged)."}
+{"id": "07f2829b", "sub_skills": ["OVD.8", "OVD.5"], "clusters": ["CL.0062", "CL.0153"], "distractors": [], "why": "Order 9 country values for each year, find the median (5th), compute the difference."}
+{"id": "d0efc1dd", "sub_skills": ["OVD.12", "OVD.8"], "clusters": ["CL.0026", "CL.0062", "CL.0123"], "distractors": [], "why": "Set mean equal to median for each possible x; test which value makes the equality impossible."}
+{"id": "3f2ee20a", "sub_skills": ["OVD.3"], "clusters": ["CL.0134", "CL.0194"], "distractors": [], "why": "Same means but different standard deviations; larger SD means larger spread. Must distinguish mean from individual values."}
+{"id": "a456cfd2", "sub_skills": ["OVD.1"], "clusters": ["CL.0139", "CL.0072"], "distractors": [], "why": "Read frequency table to identify the maximum data value; distinguish value column from frequency column."}
+{"id": "a5b069b4", "sub_skills": ["OVD.8"], "clusters": ["CL.0062"], "distractors": [], "why": "Order data values and find the middle value."}
+{"id": "4c774b00", "sub_skills": ["OVD.2", "OVD.7", "OVD.8"], "clusters": ["CL.0021", "CL.0050", "CL.0183"], "distractors": [], "why": "Compute frequency-weighted mean, locate median position in frequency table, identify mode; right-skew from outlier (30) pulls mean > median > mode."}
+{"id": "94237701", "sub_skills": ["OVD.8", "OVD.5"], "clusters": ["CL.0050", "CL.0139"], "distractors": [], "why": "Locate median in each group's frequency table; Group A median (5th of 9)=5, Group B median (6th of 11)=6; difference=1."}
+{"id": "54d93874", "sub_skills": ["OVD.12"], "clusters": ["CL.0123", "CL.0026"], "distractors": [], "why": "Compute Andrew's mean, add 0.1 for Maria's mean, use total=mean*count to find Maria's total, solve for x."}
+{"id": "9d935bd8", "sub_skills": ["OVD.8"], "clusters": ["CL.0062", "CL.0153", "CL.0185"], "distractors": [], "why": "Find median of 7 values from table, subtract given population median. Must ignore irrelevant info about all 50 states."}
+{"id": "2a59eb45", "sub_skills": ["OVD.12"], "clusters": ["CL.0123", "CL.0021"], "distractors": [], "why": "Compute combined mean using weighted mean formula: total_C = n_A*mean_A + n_B*mean_B; mean_C = total_C/(n_A+n_B)."}
+{"id": "391ae4b2", "sub_skills": ["OVD.11"], "clusters": ["CL.0183", "CL.0123"], "distractors": [], "why": "Adding a value above the existing range increases the mean. Median may or may not change depending on position."}
+{"id": "98958ae8", "sub_skills": ["OVD.12"], "clusters": ["CL.0123", "CL.0021"], "distractors": [], "why": "Compute combined mean: total = n_A*mean_A + n_B*mean_B; mean = total/(n_A+n_B)."}
+{"id": "4626102e", "sub_skills": ["OVD.11"], "clusters": ["CL.0175"], "distractors": [], "why": "Adding a constant to every value shifts the median but preserves the range. Answer: median increases, range stays equal."}
+{"id": "4ff597db", "sub_skills": ["OVD.12"], "clusters": ["CL.0123"], "distractors": [], "why": "Use total=mean*count for both groups; difference in totals = departing employee's years. 20*6.7 - 19*6.25 = 15.25."}
+{"id": "bf47ad54", "sub_skills": ["OVD.7"], "clusters": ["CL.0021", "CL.0139"], "distractors": [], "why": "Compute frequency-weighted mean for each data set; compare to find the greatest."}
+{"id": "e7d48c8a", "sub_skills": ["OVD.11"], "clusters": ["CL.0183", "CL.0123"], "distractors": [], "why": "Determine whether adding a new data point above/below current mean/median changes those measures."}
+{"id": "1e8ccffd", "sub_skills": ["OVD.12"], "clusters": ["CL.0123"], "distractors": [], "why": "Use total=mean*count: 8*14.5=116, 7*12=84; highest score = 116-84 = 32."}
+{"id": "1142af44", "sub_skills": ["OVD.7"], "clusters": ["CL.0021", "CL.0139"], "distractors": [], "why": "Compute frequency-weighted mean with symbolic frequencies; symmetric distribution yields mean = 3."}
+{"id": "f8a322d9", "sub_skills": ["OVD.13"], "clusters": ["CL.0134", "CL.0161"], "distractors": [], "why": "Compare standard deviations from histogram distributions; wider spread = larger SD."}
+{"id": "ecbdbe84", "sub_skills": ["OVD.8"], "clusters": ["CL.0050", "CL.0111"], "distractors": [], "why": "Locate median position in grouped frequency table; use interval endpoints to determine which range contains it."}
+{"id": "241f1db7", "sub_skills": ["OVD.8"], "clusters": ["CL.0050", "CL.0139"], "distractors": [], "why": "Use frequency table to locate median position; distinguish weight values from their frequencies."}
+{"id": "d65b9a87", "sub_skills": ["OVD.10", "OVD.13"], "clusters": ["CL.0062", "CL.0134"], "distractors": [], "why": "Compare medians and standard deviations across two dot plot distributions."}
+{"id": "6c9444cd", "sub_skills": ["OVD.9", "OVD.5"], "clusters": ["CL.0027", "CL.0070"], "distractors": [], "why": "Read min and max from each box plot to compute ranges, then find their positive difference."}
+{"id": "457d2f2c", "sub_skills": ["OVD.11"], "clusters": ["CL.0175", "CL.0123"], "distractors": [], "why": "Symmetric changes around median preserve mean, median, and sum; SD increases as values move further apart. Answer: D (standard deviation)."}
+{"id": "c178d4da", "sub_skills": ["OVD.5", "OVD.7"], "clusters": ["CL.0021", "CL.0139"], "distractors": [], "why": "Compute frequency-weighted means for two data sets from frequency table and compare."}
+{"id": "190be2fc", "sub_skills": ["OVD.12"], "clusters": ["CL.0123", "CL.0026"], "distractors": [], "why": "Use mean-total relationship to find total, subtract known values to solve for the unknown largest integer."}
+{"id": "d3b9c8d8", "sub_skills": ["OVD.10"], "clusters": ["CL.0070"], "distractors": [], "why": "Read and compare medians from two box plots; median is directly visible. Cannot determine means from box plots alone."}

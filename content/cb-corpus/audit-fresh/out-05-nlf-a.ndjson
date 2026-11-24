@@ -1,0 +1,113 @@
+{"id":"7f2524bf","sub_skills":["NLF.2"],"clusters":["CL.0084","CL.0154"],"distractors":[],"why":"Asks 'best interpretation of the y-intercept' with verbal answer choices describing context. y-intercept is at x=0 (when purchased), value ~$225. Read initial value and match to context statement."}
+{"id":"e9aed539","sub_skills":["NLF.5"],"clusters":["CL.0087"],"distractors":[],"why":"Parabola translated up 4 units. One function defined as vertical shift of another; answer depends on applying that shift to identify the resulting graph."}
+{"id":"4fbffc0a","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Asks 'best interpretation' of marked point (1.0, 4.8) on a height-vs-time graph. Answer choices are verbal context statements. Interpret f(1.0)=4.8 as '1.0 second after launch, height is 4.8 meters.'"}
+{"id":"6abec9a8","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0084"],"distractors":[],"why":"Read the y-intercept (x=0) from a nonlinear graph. Curve crosses y-axis at approximately (0,-5). Choices are coordinate pairs, not verbal statements."}
+{"id":"1ee962ec","sub_skills":["NLF.1","NLF.4"],"clusters":["CL.0072","CL.0210"],"distractors":[],"why":"Read values from a parabolic graph at x=0, 3, 6. Vertex at (3,-12); by symmetry of the parabola y(0)=y(6)=0. Matching table: x=0→0, x=3→-12, x=6→0."}
+{"id":"07bcecac","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0150"],"distractors":[],"why":"Exponential model P(t)=24.8(1.036)^t. Interpret P(8)≈32.91: 8 years after 1984, population ≈32.91 million. Answer choices are verbal context statements; function is exponential."}
+{"id":"788bfd56","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(144) = 4 + sqrt(144) = 4 + 12 = 16. Direct substitution into a nonlinear function."}
+{"id":"369b7bb7","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0055"],"distractors":[],"why":"Evaluate g(3) = sqrt(8·3+1) = sqrt(25) = 5. Substitute input into nonlinear function and simplify."}
+{"id":"cc2601cb","sub_skills":["NLF.1","NLF.4"],"clusters":["CL.0072"],"distractors":[],"why":"Read x-intercept from graph of upward parabola with vertex at (7,0). Since vertex touches x-axis, the single x-intercept is x=7. Quadratic zeros reading."}
+{"id":"b39d74a0","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0156"],"distractors":[],"why":"Table gives y=x³ values (0,0,1,8,27). Match to graph shape. Reading table values and matching equation parameters to graph features (cubic curve)."}
+{"id":"837e9da7","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0055"],"distractors":[],"why":"Evaluate f(3) = 1/(6·3) = 1/18. Direct substitution into nonlinear function."}
+{"id":"b5c43226","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0084"],"distractors":[],"why":"Read y-intercept from exponential graph. Curve passes through (0,2), so y-intercept is (0,2). Set x=0 and read value."}
+{"id":"2fec8bf4","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0150","CL.0084"],"distractors":[],"why":"Exponential model P(t)=1800(1.02)^t. Interpret P(0)=1800: when study began (t=0), estimated mammals =1800. Verbal context choices; exponential function with initial value reading."}
+{"id":"e166aca6","sub_skills":["NLF.1","NLF.4"],"clusters":["CL.0072"],"distractors":[],"why":"Read x-intercept from upward parabola with vertex at (4,0). Vertex on x-axis means single x-intercept at (4,0). Quadratic graph reading."}
+{"id":"cfff8f8e","sub_skills":["NLF.3"],"clusters":["CL.0127"],"distractors":[],"why":"900 subscribers doubling each year: y=900(2)^x. Write an exponential model from a growth description. Base=2 represents doubling."}
+{"id":"ad376f1a","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0055"],"distractors":[],"why":"Read f(0) from graph of y=f(x). Curve passes through (0,3), so f(0)=3. Match input x=0 to output on graph."}
+{"id":"bd4d0e0c","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0084"],"distractors":[],"why":"Evaluate f(0) = 10(0)² - 32(0) - 152 = -152. Substitute x=0 into quadratic; all variable terms vanish leaving the constant."}
+{"id":"c13016f9","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(2) = 4 + 2 + 71 = 77. Direct substitution into quadratic function."}
+{"id":"2d394c28","sub_skills":["NLF.1"],"clusters":["CL.0072"],"distractors":[],"why":"Read predicted value at x=6 from scatter plot with trend curve. Graph-reading of a nonlinear relationship."}
+{"id":"2b6c12eb","sub_skills":["NLF.1","NLF.4"],"clusters":["CL.0072"],"distractors":[],"why":"Read x-intercept from an upward parabola crossing x-axis. Identify where the quadratic graph meets y=0."}
+{"id":"79e6ec70","sub_skills":["NLF.1"],"clusters":["CL.0072"],"distractors":[],"why":"Read x-intercept from a decreasing nonlinear curve. x-intercept is where y=0, giving a point of the form (x,0)."}
+{"id":"5377d9cf","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(-1) = (1+6+3)/(-2) = 10/(-2) = -5. Substitute into rational function and simplify."}
+{"id":"75915e3c","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(2) = 2(3)^2 = 2·9 = 18. Substitute into exponential function."}
+{"id":"f547a8b1","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0084"],"distractors":[],"why":"Read y-intercept (x=0) from an exponential graph. Identify where curve crosses y-axis."}
+{"id":"2f4eafcc","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0084"],"distractors":[],"why":"Read the y-value where a parabola intersects the y-axis (x=0)."}
+{"id":"9da41c80","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0154","CL.0084"],"distractors":[],"why":"Exponential decay h(n)=22(0.85)^n. Interpret the coefficient 22: initial height before first bounce (n=0). Verbal context choices; exponential model with initial value."}
+{"id":"7160cbb3","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0084"],"distractors":[],"why":"Read y-intercept from a nonlinear curve. y-intercept has form (0,y)."}
+{"id":"20722644","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(2) = 2^3 + 9 = 8 + 9 = 17. Direct substitution into cubic function."}
+{"id":"7fe7cf26","sub_skills":["NLF.5"],"clusters":["CL.0087"],"distractors":[],"why":"Second ball launched from platform 20 feet higher. Graph of second ball is original parabola shifted up 20 units. Vertical translation of a function."}
+{"id":"5e63b9cf","sub_skills":["NLF.2"],"clusters":["CL.0084","CL.0154"],"distractors":[],"why":"Interpret y-intercept of height-vs-time graph. At x=0 (started moving), y≈8 inches. Answer choices are verbal context statements."}
+{"id":"94ff3e2d","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0055"],"distractors":[],"why":"Evaluate h(2) = 8/(5·2+6) = 8/16 = 1/2. Substitute into rational function."}
+{"id":"72ae8a87","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0150"],"distractors":[],"why":"Exponential model f(x)=200000(1.21)^x. Interpret f(5)≈518748: 5 years after start, predicted revenue ≈$518,748. Verbal context choices."}
+{"id":"09f58996","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(36) = 6 + sqrt(36) = 6 + 6 = 12. Substitute into square root function."}
+{"id":"d84a514a","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0150"],"distractors":[],"why":"Exponential model f(x)=240000(1.22)^x. Interpret f(5)≈648650: 5 years after start, predicted revenue ≈$648,650. Verbal context choices."}
+{"id":"ebe4bde0","sub_skills":["NLF.1","NLF.4"],"clusters":["CL.0072"],"distractors":[],"why":"Read x-coordinate of the peak (vertex) of a quadratic graph modeling plant diversity vs elevation. Vertex/maximum at x≈1250 meters."}
+{"id":"c99d154a","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0084"],"distractors":[],"why":"Read y-coordinate of y-intercept from a nonlinear curve with vertical asymptote. At x=0, y≈3."}
+{"id":"893c7519","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0084"],"distractors":[],"why":"Read y-intercept value from exponential graph. Curve passes through (0,3), so y=3."}
+{"id":"3ea87153","sub_skills":["NLF.1","NLE.1"],"clusters":["CL.0094"],"distractors":[],"why":"Solve g(x)=25 for x: x^2+9=25 → x^2=16 → x=4. Find input value from output; solve simple quadratic equation."}
+{"id":"d46da42c","sub_skills":["NLF.4","NLE.2"],"clusters":["CL.0156","CL.0162"],"distractors":[],"why":"Match f(x)=x^2+4 to its graph. Vertex form shows vertex at (0,4), opens upward. Relate equation features to graph shape."}
+{"id":"0ad5012e","sub_skills":["NLF.2","NLF.4"],"clusters":["CL.0084","CL.0154"],"distractors":[],"why":"Quadratic delivery model. y-intercept at x=0 gives initial value: 29 deliveries at end of May 2012. Verbal context choices."}
+{"id":"5a74f696","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0078"],"distractors":[],"why":"Write exponential model: doubles every 10 years → base 2, exponent t/10. M(t)=890(2)^(t/10)."}
+{"id":"1863e3be","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"y-intercept of y=x^2+31: set x=0, y=31."}
+{"id":"ca4ee54e","sub_skills":["NLF.1"],"clusters":["CL.0072"],"distractors":[],"why":"Read predicted SUV value at x=3 years from a decreasing curve graph. Approximately $13,632."}
+{"id":"c1eead73","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate g(4)=|4+18|=22. Direct substitution into absolute value function."}
+{"id":"04b985e6","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret K(34)=5202: object at 34 m/s has kinetic energy 5202 joules. Verbal context choices."}
+{"id":"2cf7f039","sub_skills":["NLF.1","NLE.1"],"clusters":["CL.0094"],"distractors":[],"why":"Solve 8*sqrt(x)=48 → sqrt(x)=6 → x=36. Find input from output; solve nonlinear equation."}
+{"id":"d45572cc","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0084"],"distractors":[],"why":"Read f(0) from graph. Curve passes through (0,3), so f(0)=3."}
+{"id":"79ba511a","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(2)=2^3+15=8+15=23. Direct substitution into cubic function."}
+{"id":"26f5269a","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0084"],"distractors":[],"why":"Read y-intercept from polynomial graph. Curve passes through (0,40), so y=40."}
+{"id":"50418728","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0084"],"distractors":[],"why":"Read y-intercept from polynomial graph. At x=0, y≈-3."}
+{"id":"ee05c84e","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(20)=(20+5)(30)=25*30=750. Substitute and simplify."}
+{"id":"782a8a53","sub_skills":["NLF.4"],"clusters":["CL.0072"],"distractors":[],"why":"Read vertex of parabola from graph. Vertex at (0,2)."}
+{"id":"39652e93","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0055"],"distractors":[],"why":"Evaluate f(17)=16/17. Direct substitution into rational function."}
+{"id":"044c1cb7","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate h(x)=x^2-3 for x=1,2,3: gives -2,1,6. Match table to computed values."}
+{"id":"de362c2f","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(8)=5(64)=320. Direct substitution into quadratic function."}
+{"id":"02c67921","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0084"],"distractors":[],"why":"Read y-intercept from exponential graph. At x=0, y=3."}
+{"id":"100030d9","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0094","CL.0198"],"distractors":[],"why":"Exponential decay: ball bounces to half height. After 3rd bounce: 20*(1/2)^3=2.5 ft. Geometric sequence application."}
+{"id":"7ba694f3","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0078","CL.0154"],"distractors":[],"why":"Interpret the 4 in y=44000(2)^(t/4): bacteria doubles every 4 hours. Time-scaling exponent in exponential model."}
+{"id":"c7a187a7","sub_skills":["NLF.4","NLE.1"],"clusters":["CL.0037","CL.0122"],"distractors":[],"why":"Factor x^2-18x-360=(x-30)(x+12)=0 → zeros at 30 and -12. x-intercept (-a,0)=(-12,0) so a=12."}
+{"id":"a26c29f7","sub_skills":["NLF.5"],"clusters":["CL.0087"],"distractors":[],"why":"Shift f(x)=7x^3 down 2 units: g(x)=7x^3-2. Vertical translation."}
+{"id":"99269e03","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate y=4(2)^3+3=32+3=35 when x=3."}
+{"id":"e1391dd6","sub_skills":["NLF.3","NLE.1"],"clusters":["CL.0127","CL.0078"],"distractors":[],"why":"Transistors double every 2 years. 275000·2^(t/2)>1100000 → 2^(t/2)>4 → t>4. First exceeds around 1989."}
+{"id":"3c600337","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0084"],"distractors":[],"why":"Evaluate f(0)=270(0.1)^0=270·1=270. Any base to the zero power is 1."}
+{"id":"4209aefe","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret f(5)≈243: 5 years after 1957 (=1962), art value ≈$243. Verbal context choices."}
+{"id":"f1fa0821","sub_skills":["NLF.1","NLF.3"],"clusters":["CL.0072"],"distractors":[],"why":"Read population from graph at x=0 and x=1, compute ratio. Population approximately doubled (2.0 times)."}
+{"id":"5bf0f84a","sub_skills":["NLF.2","NLF.4"],"clusters":["CL.0084","CL.0154"],"distractors":[],"why":"Quadratic h(t)=-16t^2+110t+72. Constant 72=h(0)=initial height=building height. Verbal context choices."}
+{"id":"c048055c","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0127"],"distractors":[],"why":"4% annual growth: multiplier 1.04. Model p=15000(1.04)^x. Convert percent to multiplier, write exponential."}
+{"id":"70ebd3d0","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0106","CL.0198"],"distractors":[],"why":"Base 0.90 in exponential decay: 1-0.10=0.90 means 10% decrease per 100m depth. Verbal context choices."}
+{"id":"45df91ee","sub_skills":["NLF.1"],"clusters":["CL.0084","CL.0094"],"distractors":[],"why":"y-intercept: g(0)=11(1/12)^0=11. Set x=0 in exponential function."}
+{"id":"7f87deff","sub_skills":["NLF.4"],"clusters":["CL.0163","CL.0122"],"distractors":[],"why":"Factored cubic y=3(x-14)(x+5)(x+4). Zeros at 14,-5,-4. Positive x-intercept c=14."}
+{"id":"97158b3a","sub_skills":["NLF.4"],"clusters":[],"distractors":[],"why":"Area=w(w+29)=width*length. Since width=w, length=w+29. Read factor from product form."}
+{"id":"d8ace155","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0106"],"distractors":[],"why":"Exponential growth model: initial 36100, check 36100(1.05)^13≈68072. Match to option A."}
+{"id":"dba7432e","sub_skills":["NLF.3"],"clusters":["CL.0132","CL.0198"],"distractors":[],"why":"Table values halve each step: f(x)=5·2^(-x). Identify exponential decay pattern from table."}
+{"id":"cbc4c163","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0055"],"distractors":[],"why":"Evaluate f(1/4)=5(1/4-1/4)^2+11/4=0+11/4=11/4. Substitution simplifies squared term to zero."}
+{"id":"f1c81b3b","sub_skills":["NLF.1","NLF.3"],"clusters":["CL.0094"],"distractors":[],"why":"g(3)=19a^3=2375 → a^3=125 → a=5. Then g(4)=19·5^4=19·625=11875."}
+{"id":"c19d1fb0","sub_skills":["NLF.2","NLF.4"],"clusters":["CL.0084","CL.0154"],"distractors":[],"why":"Quadratic h=-4.9t^2+9t+18. At t=0, h=18 meters. Initial height is the constant term."}
+{"id":"0aaef7aa","sub_skills":["NLF.1","NLE.1"],"clusters":["CL.0094"],"distractors":[],"why":"Solve 7n^3=56 → n^3=8 → n=2. Find input from output value; solve nonlinear equation."}
+{"id":"b7cd6ca6","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0084","CL.0154"],"distractors":[],"why":"E(0)=5(1.8)^0=5. The 5 is the initial employee count when the restaurant opened. Verbal context choices."}
+{"id":"0af701e7","sub_skills":["NLF.1","EE.1"],"clusters":["CL.0094","CL.0017"],"distractors":[],"why":"f(x)=|x-4x|=|-3x|=3|x|. f(5)=15. f(5)-f(a)=-15 → f(a)=30 → 3|a|=30 → a=10."}
+{"id":"4880eecb","sub_skills":["NLF.4","NLE.1"],"clusters":["CL.0104","CL.0037"],"distractors":[],"why":"x(x+8)=180 → x^2+8x-180=0 → (x+18)(x-10)=0 → x=10 (positive)."}
+{"id":"f5e8ccf1","sub_skills":["NLF.4"],"clusters":["CL.0163","CL.0122"],"distractors":[],"why":"Zeros: x=-4,1,3/2 from factors (x+4)(x-1)(2x-3). (-2/3,0) is NOT a zero; 2(-2/3)-3≠0."}
+{"id":"aa95fb33","sub_skills":["NLF.5"],"clusters":["CL.0087"],"distractors":[],"why":"y=f(x)+5 shifts graph up 5 units. Point (3,3) becomes (3,8). Vertical translation."}
+{"id":"3918e8bc","sub_skills":["NLF.2","NLF.4"],"clusters":["CL.0084","CL.0154"],"distractors":[],"why":"h=-4.9t^2+7t+9. At t=0, h=9 meters. Constant term is the initial height."}
+{"id":"7e5a3640","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0078"],"distractors":[],"why":"300000 doubles every 3 hours. 15 hours = 5 doublings. 300000·2^5=9,600,000."}
+{"id":"52e589f9","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"m(330)≈362 means at t=330 days after birth, predicted body mass ≈362 kg."}
+{"id":"4993b828","sub_skills":["NLF.4"],"clusters":[],"distractors":[],"why":"Area=w(w+9)=width×length. Width=w, so length=w+9. Read factor from product."}
+{"id":"981aca65","sub_skills":["NLF.5"],"clusters":["CL.0087"],"distractors":[],"why":"Translate f(x)=(a-19)/x+5 right 4 and down 3: g(x)=(a-19)/(x-4)+2."}
+{"id":"7a4475df","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0127"],"distractors":[],"why":"3% annual increase: multiplier 1.03. p(x)=2000(1.03)^x."}
+{"id":"5c00c2c1","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0127"],"distractors":[],"why":"Initial 24, 16.2% annual increase: p(t)=24(1.162)^t."}
+{"id":"281a4f3b","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0127","CL.0198"],"distractors":[],"why":"2% annual decrease: multiplier 0.98. f(x)=3000(0.98)^x. Exponential decay."}
+{"id":"9ff88bb5","sub_skills":["NLF.2","NLF.4"],"clusters":["CL.0150"],"distractors":[],"why":"x-intercept at ≈1.6 means diver hits water about 1.6 seconds after leaving board."}
+{"id":"dbe9b217","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"f(2)=8(2)^3+4=8·8+4=68. Direct substitution."}
+{"id":"dd8ac009","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0078"],"distractors":[],"why":"674.02/670≈1.006 per 30-day period. d=670(1.006)^(t/30). Rescale exponent."}
+{"id":"90bcaa61","sub_skills":["NLF.3"],"clusters":["CL.0078"],"distractors":[],"why":"f(t)=60000·2^(t/410). Doubles when t/410=1 → t=410 minutes."}
+{"id":"6676f055","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"f(θ)=-0.28(θ-27)^2+880. Vertex form; max airflow at θ=27 degrees."}
+{"id":"d71f6dbf","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"h(1.4)≈1.64 means at 1.4 seconds, height is approximately 1.64 feet."}
+{"id":"f44a29a8","sub_skills":["NLF.1","NLE.1"],"clusters":["CL.0094"],"distractors":[],"why":"K=2v^2=18 → v^2=9 → v=3 m/s. Solve quadratic for speed."}
+{"id":"44076c7d","sub_skills":["NLF.4"],"clusters":["CL.0094"],"distractors":[],"why":"Check x=-1,0,1 → 10,14,20. f(x)=x^2+5x+14: f(-1)=1-5+14=10✓, f(0)=14✓, f(1)=1+5+14=20✓."}
+{"id":"67f4b449","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"f(14)=1176 means a 14-foot wide wall has area 1176 square feet. Verbal context."}
+{"id":"f880f910","sub_skills":["NLF.4","NLE.1"],"clusters":["CL.0104","CL.0037"],"distractors":[],"why":"½h(h+12)=270 → h^2+12h-540=0 → (h+30)(h-18)=0 → h=18 cm."}
+{"id":"d675744f","sub_skills":["NLF.3"],"clusters":["CL.0156"],"distractors":[],"why":"y=4(2^x): increasing exponential, y-intercept at (0,4). Match to graph D."}
+{"id":"78d5f91a","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"f(-1)=(-1)^3+3(-1)^2-6(-1)-1=-1+3+6-1=7."}
+{"id":"68607eca","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0127","CL.0078"],"distractors":[],"why":"70% increase every 2 days: f(x)=233(1.70)^(x/2). Rescale exponent for period."}
+{"id":"735a0a00","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Point (1,83): 1 day after launch, stock price was $83. Interpret coordinates."}
+{"id":"dc77e0dc","sub_skills":["NLF.1"],"clusters":["CL.0084","CL.0094"],"distractors":[],"why":"f(0)=500(0.5)^0=500 mR/hr at the surface (t=0)."}
+{"id":"c4cd5bcc","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"y-intercept (0,c) means c=f(0). Definition of y-intercept."}
+{"id":"203774bc","sub_skills":["NLF.4","NLE.1"],"clusters":["CL.0104","CL.0007"],"distractors":[],"why":"n(2n+11)=546 → 2n^2+11n-546=0. Discriminant=4489=67^2 → n=14. Smaller integer is 14."}
+{"id":"6ecdbcb4","sub_skills":["NLF.4","NLF.1"],"clusters":["CL.0094","CL.0163"],"distractors":[],"why":"At zeros x=-6,-5,4: f(x)=0, so y=f(x)-3=-3. Table A: all y=-3."}
+{"id":"db888cd6","sub_skills":["NLF.2"],"clusters":["CL.0072","CL.0150"],"distractors":[],"why":"y-intercept at x=1992 is y≈9 (thousands). Company sent ~9000 catalogs at end of 1992."}
+{"id":"197bed38","sub_skills":["NLF.2","NLF.4"],"clusters":["CL.0072"],"distractors":[],"why":"Height increases from x=0 to x=2 (before the vertex/maximum). Read interval from graph."}
+{"id":"a31417d1","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0127","CL.0198"],"distractors":[],"why":"15% annual decrease: C=600(1-0.15)^t=600(0.85)^t. Exponential decay."}
+{"id":"e1f9000d","sub_skills":["NLF.1","NLE.1","NLF.4"],"clusters":["CL.0094"],"distractors":[],"why":"h(t)=-16t^2+3364=0 → t^2=210.25 → t=14.5 seconds."}
+{"id":"be0c419e","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0150"],"distractors":[],"why":"f(8)≈82 means approximately 8 years after purchase, coin value is ~$82."}

@@ -1,0 +1,124 @@
+{"id":"535fa6e6","sub_skills":["LE2.1"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Translate rate-per-pound context into total-cost expression 0.85p+1.20c; each term is rate×quantity."}
+{"id":"8a1544f1","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Compute slope (0−3)/(1−0)=−3 from two graph points, note y-int=3, match y=−3x+3."}
+{"id":"8b2a2a63","sub_skills":["LE2.4"],"clusters":["CL.0160","CL.0084"],"distractors":[],"why":"Read b=−32 directly from y=−6x−32 in slope-intercept form; y-intercept is (0,−32)."}
+{"id":"768b2425","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0060"],"distractors":[],"why":"In 68x+85y=1258 the term 85y is coefficient×count = cost for y items purchased."}
+{"id":"39571c77","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute y=14 into x+y=52, solve x=52−14=38."}
+{"id":"12ae3452","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute a=9 into 46=2(9)+2b → 2b=28 → b=14."}
+{"id":"f40552a9","sub_skills":["LE2.4"],"clusters":["CL.0266"],"distractors":[],"why":"Read the y-intercept directly from the graph where the line crosses the y-axis."}
+{"id":"8da536c6","sub_skills":["LE2.1"],"clusters":["CL.0029"],"distractors":[],"why":"Model sequential 80% then 50% increases as 28×1.80×1.50. Borderline LE2—expression is multiplicative, not a standard two-variable linear equation."}
+{"id":"174885f8","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0060"],"distractors":[],"why":"In 3w+5r=14, the term 5r = rate×time = distance the person ran."}
+{"id":"39617468","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute y=170 into x+y=350, solve x=180."}
+{"id":"1fe778dc","sub_skills":["LE2.4"],"clusters":["CL.0128","CL.0160"],"distractors":[],"why":"Given slope −1/2 and point (0,3) which is the y-intercept, write y=−(1/2)x+3."}
+{"id":"b9839f9e","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0160"],"distractors":[],"why":"In F=2.50x+7.00y the coefficient 7.00 is the per-unit cost of a burrito."}
+{"id":"eeebe166","sub_skills":["LE2.4"],"clusters":["CL.0266"],"distractors":[],"why":"Read y-intercept from the graph where the line crosses the y-axis."}
+{"id":"ed856e9c","sub_skills":["LE2.4"],"clusters":["CL.0160","CL.0084"],"distractors":[],"why":"In y=34x+81, the y-intercept is b=81 so the point is (0,81)."}
+{"id":"1efd8202","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Compute slope from table rows, then identify intercept to match y=mx+b form."}
+{"id":"c5479c1a","sub_skills":["LE2.3"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"13×10=130 lb from 10-lb boxes; 220−130=90 remaining; 90/5=18 five-pound boxes."}
+{"id":"029c2dc2","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute y=10 into x+3(10)=70, solve x=40."}
+{"id":"c8e0f511","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0060"],"distractors":[],"why":"In x+3y=240, the term 3y = 3 liters/bottle × y bottles = total liters in three-liter bottles."}
+{"id":"2d0e13a6","sub_skills":["LE2.5"],"clusters":["CL.0172","CL.0160"],"distractors":[],"why":"Read slope 1/4 from y=(1/4)x+1; parallel lines share the same slope, so slope of j is 1/4."}
+{"id":"5518885d","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute x=670 into x+y=1440, solve y=770."}
+{"id":"b2de69bd","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Compute slope from two table rows, identify intercept, match y=mx+b form."}
+{"id":"4acd05cd","sub_skills":["LE2.4"],"clusters":["CL.0094","CL.0024"],"distractors":[],"why":"Graph through (0,−5),(1,−3),(2,−1) gives slope 2; table A lists those exact points."}
+{"id":"7038b587","sub_skills":["LE2.3"],"clusters":["CL.0060","CL.0047","CL.0104"],"distractors":[],"why":"Hats cost 10×$3=$30; $71−$30=$41 remaining; 41 cupcakes at $1 each."}
+{"id":"10c448d6","sub_skills":["LE2.4"],"clusters":["CL.0128","CL.0160"],"distractors":[],"why":"Slope 1/9, y-intercept 14 → y=(1/9)x+14."}
+{"id":"6a12efbb","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute y=8 into 46=2x+16 → 2x=30 → x=15."}
+{"id":"dfa45424","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0060"],"distractors":[],"why":"In 12.50g+1.50t=80, the term 1.50t = price×count = cost for t single-ride tickets."}
+{"id":"ba79f10f","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Compute slope from table, identify intercept, match equation."}
+{"id":"52a8ef85","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute x=2 into 40(2)+20y=160 → 20y=80 → y=4 shirts."}
+{"id":"2554b413","sub_skills":["LE2.4"],"clusters":["CL.0128","CL.0160"],"distractors":[],"why":"Slope 6, y-intercept 8 → y=6x+8."}
+{"id":"cea27ab2","sub_skills":["LE2.4"],"clusters":["CL.0094"],"distractors":[],"why":"Substitute candidate (x,y) pairs into 7x−4y=−84 to identify the consistent table."}
+{"id":"789975b7","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0060"],"distractors":[],"why":"In 0.6x+0.4y=240, the term 0.4y = fraction×weight = pounds of filler in fertilizer B."}
+{"id":"80ae6851","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute y=19 into x+3(19)=70 → x=70−57=13."}
+{"id":"dd797fe2","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0060"],"distractors":[],"why":"In 4x+3y=24, the term 3y = $3×y notebooks = total cost for y notebooks."}
+{"id":"d1042cf8","sub_skills":["LE2.1"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Model total cost as 0.04f+0.48p=661.76 — each term is unit-price × quantity."}
+{"id":"e7343559","sub_skills":["LE2.4"],"clusters":["CL.0094"],"distractors":[],"why":"Substitute x values into y=−4x+40 to generate y values and match the correct table."}
+{"id":"8adf1335","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"Variable x is defined as amount allocated to police; direct reading of the variable's meaning."}
+{"id":"8368afd1","sub_skills":["LE2.3"],"clusters":["CL.0266"],"distractors":[],"why":"Read the y-coordinate from the graph at x=4 lbs tangerines to find lbs of lemons."}
+{"id":"b8fa27db","sub_skills":["LE2.5"],"clusters":["CL.0172","CL.0265"],"distractors":[],"why":"Read slope of line j from graph; parallel line k shares the same slope."}
+{"id":"db0107df","sub_skills":["LE2.4"],"clusters":["CL.0084","CL.0080"],"distractors":[],"why":"Set x=0 in 12x+2y=18 → 2y=18 → y=9; y-intercept is (0,9)."}
+{"id":"b450ab03","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0060"],"distractors":[],"why":"In 1.5x+1.9y=46.1, the term 1.9y = rate×count = total time in minutes to make y salads."}
+{"id":"b2845d88","sub_skills":["LE2.4"],"clusters":["CL.0266"],"distractors":[],"why":"Read slope and y-intercept from the graph to match the equation in slope-intercept form."}
+{"id":"8c98c834","sub_skills":["LE2.3"],"clusters":["CL.0094"],"distractors":[],"why":"Substitute x=30 into y=0.1x → y=3 pieces completed."}
+{"id":"c6b151d4","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"The solution (24,73) means x=24 packages of straws and y=73 cupcake holders cost 364 cents total."}
+{"id":"6fa1dc0f","sub_skills":["LE2.4"],"clusters":["CL.0128","CL.0160"],"distractors":[],"why":"Slope 4 and y-intercept 6 give y=4x+6 directly from slope-intercept form."}
+{"id":"ebf8d2b7","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0060"],"distractors":[],"why":"In 10x+5y=700, the term 5y = rate×count = total time in minutes to pack y small boxes."}
+{"id":"87322577","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"In x+y=75, the constant 75 represents the total minutes spent running and biking."}
+{"id":"24854644","sub_skills":["LE2.5"],"clusters":["CL.0172","CL.0128"],"distractors":[],"why":"Parallel to y=7x+4 → same slope 7; through (0,5) → y=7x+5."}
+{"id":"b23bba4c","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute a=3 into 3(3)+4b=25 → 4b=16 → b=4 large boxes."}
+{"id":"4d8ccb96","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0060"],"distractors":[],"why":"(0.04)(24) = concentration×volume = total amount of salt in the final 24-liter mixture."}
+{"id":"83f2c3bf","sub_skills":["LE2.4"],"clusters":["CL.0094"],"distractors":[],"why":"Substitute x values into y=x+4 to generate y values and identify the matching table."}
+{"id":"b52e5b6f","sub_skills":["LE2.3"],"clusters":["CL.0047"],"distractors":[],"why":"150−50=100 grams of calcium; simple subtraction to isolate the unknown part."}
+{"id":"5b8a8475","sub_skills":["LE2.5"],"clusters":["CL.0116","CL.0160"],"distractors":[],"why":"Slope of k is 3; perpendicular slope is negative reciprocal −1/3."}
+{"id":"ee846db7","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"In 5.48x+7.30y=1277.94, the coefficient 5.48 is the cost in dollars of one small cup."}
+{"id":"00b9bd37","sub_skills":["LE2.1"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Translate context into equation: 7×(T-shirts)+18×(sweatshirts)=630."}
+{"id":"a04190b7","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"In 4.51x+6.07y=896.86, the coefficient 4.51 is the price per pint of smaller blueberries."}
+{"id":"63be6c9a","sub_skills":["LE2.5"],"clusters":["CL.0172","CL.0094"],"distractors":[],"why":"Parallel to y=18x+2 through origin → y=18x; substitute x=4 → d=72."}
+{"id":"a4989860","sub_skills":["LE2.4"],"clusters":["CL.0128","CL.0160"],"distractors":[],"why":"Slope 9, y-intercept −5 → y=9x−5; p=9."}
+{"id":"fb43b85f","sub_skills":["LE2.4"],"clusters":["CL.0024"],"distractors":[],"why":"Slope = (24−6)/(15−4) = 18/11."}
+{"id":"9ed4c1a2","sub_skills":["LE2.4"],"clusters":["CL.0160","CL.0017"],"distractors":[],"why":"Distribute and combine: y=(27/4)x+15/4+7x=(55/4)x+15/4; slope is 55/4."}
+{"id":"400798d6","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"In 2x+y=37 for a triangle with angles 2x, y, 37°, the 37 represents the sum of the other two angle measures."}
+{"id":"038d87d7","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"In 2x+35y=3934, x is defined as the number of red maple trees planted — direct variable interpretation."}
+{"id":"6f6dfe3e","sub_skills":["LE2.4"],"clusters":["CL.0024"],"distractors":[],"why":"Compute slope from two table rows using (y2−y1)/(x2−x1)."}
+{"id":"637022d2","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute r=16 into 2.5b+5(16)=80 → 2.5b=0 → b=0."}
+{"id":"2e1a7f66","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"In 3x+6y=63, the coefficient 6 is the number of sides of each hexagon."}
+{"id":"ca452900","sub_skills":["LE2.4"],"clusters":["CL.0160"],"distractors":[],"why":"Read slope directly from y=(5/13)x−23; slope is 5/13."}
+{"id":"c39dbbdf","sub_skills":["LE2.5"],"clusters":["CL.0172","CL.0080"],"distractors":[],"why":"Rewrite 4x−9y=3 as y=(4/9)x−1/3; parallel line s has the same slope 4/9."}
+{"id":"f81a0503","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Slope=(−1−(−5))/(1−0)=4; y-intercept −5 → y=4x−5."}
+{"id":"265f2a53","sub_skills":["LE2.4"],"clusters":["CL.0024"],"distractors":[],"why":"Slope from intercepts: (86/3−0)/(0−(−4))=86/12=43/6."}
+{"id":"62ef6f73","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0060"],"distractors":[],"why":"In 8r+18t=210, the term 18t = sides-per-triangle × count = total perimeter from triangle sides."}
+{"id":"431c3038","sub_skills":["LE2.3"],"clusters":["CL.0060","CL.0047"],"distractors":[],"why":"Biking 1 hr=300 cal; 1900−300=1600 remaining; 1600÷(200/30min)=240 minutes hiking."}
+{"id":"92aa3a94","sub_skills":["LE2.5"],"clusters":["CL.0116","CL.0160"],"distractors":[],"why":"Slope of k is 7; perpendicular slope is −1/7."}
+{"id":"d62ad380","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Compute slope from table rows, identify y-intercept, match P=ms+b form."}
+{"id":"0d1b1e35","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047","CL.0104"],"distractors":[],"why":"4c+2(5)=1114 → 4c+10=1114 → 4c=1104 → c=276 mg per cup."}
+{"id":"df78b361","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0060"],"distractors":[],"why":"In 4x+6y=36, the term 6y = price×count = total cost for y large jars."}
+{"id":"2e0290c3","sub_skills":["LE2.1"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Read per-share prices from graph intercepts, translate into price×shares equation for $480."}
+{"id":"c307283c","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Slope=(0−(−8))/(−8−0)=−1; y-intercept −8 → y=−x−8."}
+{"id":"e0f59119","sub_skills":["LE2.4"],"clusters":["CL.0160","CL.0017"],"distractors":[],"why":"Distribute and combine: (29/3)x+10/3+5x=(44/3)x+10/3; slope is 44/3."}
+{"id":"483d208d","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"Read coefficients: circle=$90, square=$80; difference=90−80=$10."}
+{"id":"606cdce7","sub_skills":["LE2.4"],"clusters":["CL.0094"],"distractors":[],"why":"Substitute table (x,y) pairs into each candidate equation to identify the consistent one."}
+{"id":"bbb0359a","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Slope=(16−11)/(2−1)=5; at x=1 y=11 → b=6; y=5x+6."}
+{"id":"9c7741c6","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute x=1 into 60(1)+50y=210 → 50y=150 → y=3 hours."}
+{"id":"51568fb9","sub_skills":["LE2.4"],"clusters":["CL.0080","CL.0160"],"distractors":[],"why":"Rewrite 10x−5y=−12 as y=2x+12/5; slope is 2."}
+{"id":"99ea3715","sub_skills":["LE2.4"],"clusters":["CL.0084","CL.0160"],"distractors":[],"why":"Original y-intercept: x=0 → y=9; shift down 5 → (0,4)."}
+{"id":"d7c8ba0b","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Slope=(17−9)/(1−0)=8; y-intercept 9 → y=8x+9."}
+{"id":"9f3cb472","sub_skills":["LE2.4"],"clusters":["CL.0128"],"distractors":[],"why":"Slope −1/3 through (9,10): y=−(1/3)x+3+10=−(1/3)x+13."}
+{"id":"c5e38487","sub_skills":["LE2.3"],"clusters":["CL.0047"],"distractors":[],"why":"56−10=46 mL water; subtract the known part from the whole."}
+{"id":"7625073d","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute b=71 into 7g+7(71)=840 → 7g=343 → g=49."}
+{"id":"3c03cbd8","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"In 5x+24y=4529, x is the average number of trees per hectare in the industrial park."}
+{"id":"1087f6c4","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"Crushed stone costs $24.75/ton, topsoil $24.50/yd³; difference=$0.25."}
+{"id":"0451d754","sub_skills":["LE2.5"],"clusters":["CL.0172","CL.0160"],"distractors":[],"why":"Parallel to y=(17/7)x+4 → same slope 17/7."}
+{"id":"9b0a4eae","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"Point (8,10) means length=8 m and width=10 m for a rectangle with perimeter 36 m."}
+{"id":"01682aa5","sub_skills":["LE2.5"],"clusters":["CL.0116","CL.0080"],"distractors":[],"why":"Rewrite 2y+18x=9 → slope −9; perpendicular slope is 1/9."}
+{"id":"002dba45","sub_skills":["LE2.5"],"clusters":["CL.0116","CL.0160"],"distractors":[],"why":"Slope of k is −17/3; perpendicular slope is 3/17."}
+{"id":"3008cfc3","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0094"],"distractors":[],"why":"Slope=(−15−13)/7=−4; y-int at x=k−5: y=13+(−4)(−5)=33, so b=33."}
+{"id":"3cdbf026","sub_skills":["LE2.4"],"clusters":["CL.0094","CL.0089"],"distractors":[],"why":"Substitute (0,−3): k(−3)=6 → k=−2; verify with (−2,−6)."}
+{"id":"00723d16","sub_skills":["LE2.5"],"clusters":["CL.0116","CL.0080"],"distractors":[],"why":"Rewrite 3y+12x=5 → slope −4; perpendicular slope is 1/4."}
+{"id":"9bbce683","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128","CL.0084"],"distractors":[],"why":"Slope=6 from table; line h: y=6x+22; down 5: y=6x+17; x-int: x=−17/6."}
+{"id":"686b7244","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"Online=15 hr, on-site=10 hr; difference=15−10=5 hours more per online course."}
+{"id":"db422e7f","sub_skills":["LE2.5"],"clusters":["CL.0116","CL.0080"],"distractors":[],"why":"Rewrite 4y+8x=6 → slope −2; perpendicular slope is 1/2."}
+{"id": "fdee0fbf", "sub_skills": ["LE2.1", "LE2.3", "LE2.4"], "clusters": ["CL.0025", "CL.0092", "CL.0094", "CL.0004"], "distractors": [], "why": "Line through (0,-6) and (2,2): slope=(2-(-6))/(2-0)=4, equation y=4x-6. At x=20: w=4(20)-6=74. Requires slope from two points (CL.0025), slope-intercept form (CL.0092), substitution (CL.0094), arithmetic (CL.0004)."}
+{"id":"d0e614a6","sub_skills":["LE2.4"],"clusters":["CL.0094"],"distractors":[],"why":"Substitute x=1,2,4 into (3/5)x+(3/4)y=7 and solve for y; y=128/15, 116/15, 92/15 matches D."}
+{"id":"9aaf7786","sub_skills":["LE2.4"],"clusters":["CL.0128"],"distractors":[],"why":"Slope −5/3 through (−6,0): y=(−5/3)(x+6)=−(5/3)x−10; y-intercept is −10."}
+{"id":"b9835972","sub_skills":["LE2.5"],"clusters":["CL.0172","CL.0094"],"distractors":[],"why":"Parallel to y=8x+2 → slope 8; through (0,0) → y=8x; d=8(3)=24."}
+{"id":"05bb1af9","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Slope of graphed line=(1−2)/(4−0)=−1/4; y=−(1/4)x+2; f(x)=y−14=−(1/4)x−12."}
+{"id":"cc7ffe02","sub_skills":["LE2.2"],"clusters":["CL.0154","CL.0060"],"distractors":[],"why":"In 3x+5y=32, the term 5y=5 cups/jar × y large jars = total cups in large jars."}
+{"id":"0b46bad5","sub_skills":["LE2.4"],"clusters":["CL.0084","CL.0160"],"distractors":[],"why":"ax+by=b with 0<a<b: y-int=1, x-int=b/a>1, slope=−a/b negative with |slope|<1; match the graph."}
+{"id":"c362c210","sub_skills":["LE2.2"],"clusters":["CL.0084","CL.0060"],"distractors":[],"why":"Read graph intercepts for flower counts at $24 total; price per cornflower = $24 ÷ cornflower-intercept."}
+{"id":"768f3b7c","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Slope=(21−24)/(−s−(−2s))=−3/s; line y=(−3/s)x+18; multiply by s → 3x+sy=18s."}
+{"id":"94b48cbf","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":[],"why":"x-int a=−31/7; y-int b=−31/2; b/a=(−31/2)/(−31/7)=7/2."}
+{"id":"98d3393a","sub_skills":["LE2.5"],"clusters":["CL.0116"],"distractors":[],"why":"x=2 is vertical; perpendicular to vertical is horizontal; slope=0."}
+{"id":"cc3e9528","sub_skills":["LE2.4"],"clusters":["CL.0084","CL.0094"],"distractors":[],"why":"Translate 9x−10y=19 down 4: replace y with y+4 → 9x−10y=59; x-int=59/9."}
+{"id":"0366d965","sub_skills":["LE2.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Slope 2 through (3,7): at y=11 → k=5; at x=12 → n=25; k+n=30."}
+{"id":"6d8ad460","sub_skills":["LE2.5"],"clusters":["CL.0024","CL.0116"],"distractors":[],"why":"Slope of k=(−5−0)/(0−(−6))=−5/6; perpendicular slope=6/5."}
+{"id":"184ce5aa","sub_skills":["LE2.5"],"clusters":["CL.0116","CL.0160"],"distractors":[],"why":"Slope of h=−(1/5)/(1/7)=−7/5; perpendicular slope=5/7."}
+{"id":"a35c7164","sub_skills":["LE2.5"],"clusters":["CL.0133","CL.0116"],"distractors":[],"why":"From perpendicularity a=−7b/5; check B: slopes −10/7 and 7/10; product=−1. ✓"}
+{"id":"2d54c272","sub_skills":["LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"Green=5 pts, Red=45 pts; difference=45−5=40 points more per red token."}
+{"id":"c4ea43ef","sub_skills":["LE2.2"],"clusters":["CL.0084","CL.0060"],"distractors":[],"why":"10x+20y=s; graph x-intercept=16 → s=10(16)=160."}
+{"id":"cb58833c","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":[],"why":"Set y=0 in (4/5)x+(1/3)y=1 → (4/5)x=1 → x=5/4."}
+{"id":"9d0396d4","sub_skills":["LE2.3"],"clusters":["CL.0024","CL.0094"],"distractors":[],"why":"Slope=(0−7)/(8−0)=−7/8; at y=4: 4=(−7/8)d+7 → d=24/7."}
+{"id":"a7a14e87","sub_skills":["LE2.5"],"clusters":["CL.0116","CL.0128"],"distractors":[],"why":"Slope of k=−1; perpendicular slope=1; y-int=3 → y=x+3 → x−y=−3."}
+{"id":"9f70fd47","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":[],"why":"Set x=0: −(5/9)y=−21 → y=189/5."}
+{"id":"a1fd2304","sub_skills":["LE2.1"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"0.25x+0.10(3)=0.15(x+3) → 0.10x=0.15 → x=1.5 liters."}
+{"id":"5b7599a6","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0089"],"distractors":[],"why":"Slope=(0−6)/(2−0)=−3; 3x+y=6 → 18x+6y=36; R=6."}
+{"id":"49800634","sub_skills":["LE2.3"],"clusters":["CL.0024","CL.0094"],"distractors":[],"why":"Slope=(52−(−48))/(7−(−18))=4; y=4x+24; at x=1/7: y=172/7."}

@@ -1,0 +1,80 @@
+{"id": "93f48423", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Area of rectangle = 7*6 = 42. Direct formula application."}
+{"id": "5252e606", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Area of square = 55^2 = 3025. Direct formula."}
+{"id": "bb560789", "sub_skills": ["AV.1"], "clusters": ["CL.0004", "CL.0119"], "distractors": [], "why": "Area of square S = 4^2 = 16; total = 80 + 16 = 96. Add parts to get whole."}
+{"id": "babd7461", "sub_skills": ["AV.5"], "clusters": ["CL.0182", "CL.0155", "CL.0086"], "distractors": [], "why": "Scale factor = 135/15 = 9. Perimeter RST = 36*9 = 324. Similar triangles, perimeter scales by k."}
+{"id": "59cb654c", "sub_skills": ["AV.1"], "clusters": ["CL.0099", "CL.0119"], "distractors": [], "why": "s^2 = 64, s = 8. Invert area formula by taking square root."}
+{"id": "2b41a4c4", "sub_skills": ["AV.3"], "clusters": ["CL.0119"], "distractors": [], "why": "V = 11*8*10 = 880 cubic meters. Direct volume formula."}
+{"id": "d0b6d927", "sub_skills": ["AV.1"], "clusters": ["CL.0047", "CL.0119"], "distractors": [], "why": "w = 63/9 = 7. Isolate variable from area formula."}
+{"id": "0d43db90", "sub_skills": ["AV.1"], "clusters": ["CL.0004", "CL.0047"], "distractors": [], "why": "BC = 17 - 4 - 7 = 6. Subtract known sides from perimeter."}
+{"id": "0e40dfb0", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Area = length * width = 3 * 39. Recognize area formula expression."}
+{"id": "fc5ef8d3", "sub_skills": ["AV.5"], "clusters": ["CL.0182", "CL.0086"], "distractors": [], "why": "Scale factor = 150/50 = 3. XY = 6*3 = 18. Perimeter ratio gives length scale."}
+{"id": "689abc2a", "sub_skills": ["AV.1"], "clusters": ["CL.0004"], "distractors": [], "why": "72 - 20 = 52. Subtract removed area from whole."}
+{"id": "0837c3b9", "sub_skills": ["AV.5"], "clusters": ["CL.0182"], "distractors": [], "why": "DE = 2*AB, so perimeter DEF = 2*20 = 40. Perimeter scales by k."}
+{"id": "575f1e12", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Area = 34*29 = 986. Direct rectangle area formula."}
+{"id": "b4767bef", "sub_skills": ["AV.1"], "clusters": ["CL.0004", "CL.0047"], "distractors": [], "why": "Third side = 18 - 4 - 6 = 8. Subtract known sides from perimeter."}
+{"id": "c88183f7", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Perimeter = 2(13+6) = 38. Direct perimeter formula."}
+{"id": "50774285", "sub_skills": ["AV.3"], "clusters": ["CL.0047", "CL.0119"], "distractors": [], "why": "V = lwh -> 2736 = 19*8*h -> h = 2736/152 = 18. Isolate height from volume."}
+{"id": "29e9b28c", "sub_skills": ["AV.1"], "clusters": ["CL.0004", "CL.0047"], "distractors": [], "why": "z = 22 - 9 - 7 = 6. Subtract known sides from perimeter."}
+{"id": "3453aafc", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Area = 36*34 = 1224. Direct area formula."}
+{"id": "f60bb551", "sub_skills": ["AV.1"], "clusters": ["CL.0047", "CL.0119"], "distractors": [], "why": "Width = 630/70 = 9. Isolate from area formula."}
+{"id": "d2047497", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Area = 17*7 = 119 cm^2. Direct area formula."}
+{"id": "4efea6a3", "sub_skills": ["AV.1"], "clusters": ["CL.0047", "CL.0119"], "distractors": [], "why": "Width = 57/19 = 3. Isolate from area = l*w."}
+{"id": "f39f88b7", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Area = (1/2)(40)(90) = 1800. Triangle area formula."}
+{"id": "76670c80", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Perimeter = 4*45 = 180. Square perimeter formula."}
+{"id": "4420e500", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Area = 4*2 = 8 cm^2. Direct rectangle area."}
+{"id": "165c30c4", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Area = 64*32 = 2048. Direct rectangle area formula."}
+{"id": "d683a9cc", "sub_skills": ["AV.3"], "clusters": ["CL.0119"], "distractors": [], "why": "V = 6*2*3 = 36. Direct rectangular prism volume using given formula."}
+{"id": "a490003a", "sub_skills": ["AV.1"], "clusters": ["CL.0104", "CL.0119"], "distractors": [], "why": "Length = 7+40 = 47. Area = 7*47 = 329. Translate words to find length, then apply formula."}
+{"id": "02b02213", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Perimeter = 2(4+9) = 26. Direct perimeter formula."}
+{"id": "cf53cb56", "sub_skills": ["AV.1"], "clusters": ["CL.0072", "CL.0119", "CL.0136"], "distractors": [], "why": "Square with diagonals on axes, vertices at distance 5. Area = (1/2)*d1*d2 = (1/2)*10*10 = 50. Decompose via diagonals."}
+{"id": "37dde49f", "sub_skills": ["AV.3"], "clusters": ["CL.0047", "CL.0099", "CL.0119"], "distractors": [], "why": "Stem-given volume formula 7*pi*k^3/48 = 473. Solve for k: k^3 = 473*48/(7*pi), k ≈ 10.11."}
+{"id": "468613c0", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Area = (1/2)(56)(112) = 3136. Triangle area formula."}
+{"id": "a2e76b60", "sub_skills": ["AV.3"], "clusters": ["CL.0004", "CL.0119"], "distractors": [], "why": "Cylinder volume = 75*10 = 750. Fruit volume = 750 - 110 = 640. Subtract syrup from total."}
+{"id": "cecbdeba", "sub_skills": ["AV.3"], "clusters": ["CL.0047", "CL.0119"], "distractors": [], "why": "V = Bh -> 432 = 24h -> h = 18. Isolate height from cylinder volume."}
+{"id": "ae33e0a1", "sub_skills": ["AV.3"], "clusters": ["CL.0031", "CL.0119"], "distractors": [], "why": "Diameter 22 -> radius 11. V = pi*11^2*6 = 726*pi. Convert diameter to radius, then apply formula."}
+{"id": "aef4fd8a", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Area of square = side^2 = 94*94. Recognize area formula expression."}
+{"id": "9c0a0eca", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Area = (1/2)(10)(70) = 350. Triangle area formula."}
+{"id": "08b7a3f5", "sub_skills": ["AV.3"], "clusters": ["CL.0047", "CL.0119"], "distractors": [], "why": "V = Bh -> 216 = B*8 -> B = 27. Isolate base area from given volume formula."}
+{"id": "e9c5bfb2", "sub_skills": ["AV.5"], "clusters": ["CL.0155", "CL.0182", "CL.0086"], "distractors": [], "why": "Similar rectangles. Scale factor = 12/5. AD = 10*(12/5) = 24. Corresponding sides scale by k."}
+{"id": "6ae1360d", "sub_skills": ["AV.2"], "clusters": ["CL.0119"], "distractors": [], "why": "A = pi*r^2 = pi*(2.1)^2 = 4.41*pi. So b = 4.41. Circle area formula."}
+{"id": "98c12e38", "sub_skills": ["AV.2"], "clusters": ["CL.0004", "CL.0119"], "distractors": [], "why": "Circle K area = pi*16 = 16*pi. Total = 16*pi + 100*pi = 116*pi. Add two circle areas."}
+{"id": "38517165", "sub_skills": ["AV.2"], "clusters": ["CL.0047", "CL.0119"], "distractors": [], "why": "C = pi*d = 31*pi -> d = 31. Isolate diameter from circumference formula."}
+{"id": "e0874bc2", "sub_skills": ["AV.5"], "clusters": ["CL.0182", "CL.0086"], "distractors": [], "why": "Scale factor = 333/37 = 9. XY = 18*9 = 162. Similar triangles, side scales by k."}
+{"id": "a2659088", "sub_skills": ["AV.3"], "clusters": ["CL.0119"], "distractors": [], "why": "V = pi*12^2*8 = 1152*pi. Direct cylinder volume formula."}
+{"id": "d621cffb", "sub_skills": ["AV.3"], "clusters": ["CL.0119"], "distractors": [], "why": "V = (4/3)*pi*(17/5)^3 = (4/3)*pi*(4913/125) = 19652*pi/375. Sphere volume formula."}
+{"id": "151eda3c", "sub_skills": ["AV.3"], "clusters": ["CL.0106", "CL.0119"], "distractors": [], "why": "Radius B = 16*1.25 = 20. V = pi*20^2*50 = 20000*pi. Turn 25% increase into multiplier 1.25."}
+{"id": "03c6994f", "sub_skills": ["AV.5"], "clusters": ["CL.0182"], "distractors": [], "why": "Side A = 246*side B. Area A = 246^2 * area B = 60516 * area B. Area scales by k^2."}
+{"id": "c0586eb5", "sub_skills": ["AV.3"], "clusters": ["CL.0031", "CL.0119"], "distractors": [], "why": "Diameter 8 -> radius 4. V = pi*4^2*12 = 192*pi. Convert diameter to radius for volume."}
+{"id": "e4b4e9ea", "sub_skills": ["AV.3"], "clusters": ["CL.0047", "CL.0119"], "distractors": [], "why": "V = s^2*h -> 2880 = 36*h -> h = 80. Isolate height from square prism volume."}
+{"id": "e336a1d2", "sub_skills": ["AV.3"], "clusters": ["CL.0119"], "distractors": [], "why": "V = 41^3 = 68921. Cube volume formula."}
+{"id": "a4ed5285", "sub_skills": ["AV.1"], "clusters": ["CL.0119"], "distractors": [], "why": "Right triangle with legs 3 and 5. Area = (1/2)(3)(5) = 7.5. Triangle area formula."}
+{"id": "3b931fb0", "sub_skills": ["AV.3"], "clusters": ["CL.0047", "CL.0119"], "distractors": [], "why": "V = Bh -> 377 = 13*h -> h = 29. Isolate height from cylinder volume."}
+{"id": "ec5d4823", "sub_skills": ["AV.3"], "clusters": ["CL.0119"], "distractors": [], "why": "V = 4*9*10 = 360. Direct rectangular prism volume."}
+{"id": "096c7ef5", "sub_skills": ["AV.2"], "clusters": ["CL.0113", "CL.0115", "CL.0119", "CL.0169"], "distractors": [], "why": "Three points define a circle. Find center via perpendicular bisectors, r=3. C = 6*pi, k=6."}
+{"id": "e86f0651", "sub_skills": ["AV.2"], "clusters": ["CL.0119"], "distractors": [], "why": "A = pi*43^2 = 1849*pi. Direct circle area formula."}
+{"id": "1f0b582e", "sub_skills": ["AV.5"], "clusters": ["CL.0182", "CL.0119"], "distractors": [], "why": "Perimeter Y = 2*perimeter X = 96. Side Y = 96/4 = 24. Perimeter scales by k, then find side."}
+{"id": "5afbdc8e", "sub_skills": ["AV.1", "AV.2"], "clusters": ["CL.0099", "CL.0119"], "distractors": [], "why": "Circle area = 4*pi = s^2. s = 2*sqrt(pi). Equate circle area to square area, take square root."}
+{"id": "310c87fe", "sub_skills": ["AV.3", "AV.4"], "clusters": ["CL.0047", "CL.0096", "CL.0099", "CL.0119"], "distractors": [], "why": "SA = 6s^2 = 54 -> s = 3. V = 27. Surface area to edge to volume."}
+{"id": "459dd6c5", "sub_skills": ["AV.5"], "clusters": ["CL.0182"], "distractors": [], "why": "Each side of ABC is 4x DEF. Area DEF = 270/4^2 = 270/16 = 16.875. Area scales by k^2."}
+{"id": "306264ab", "sub_skills": ["AV.1"], "clusters": ["CL.0088", "CL.0119", "CL.0147"], "distractors": [], "why": "Verify (2sqrt2)^2+(6sqrt2)^2=80=(sqrt80)^2. Legs are 2sqrt2 and 6sqrt2. Area = (1/2)(2sqrt2)(6sqrt2) = 12."}
+{"id": "c984f1a5", "sub_skills": ["AV.3"], "clusters": ["CL.0119"], "distractors": [], "why": "Hemisphere V = (2/3)*pi*27^3 = 13122*pi ≈ 41200. Apply half-sphere volume formula."}
+{"id": "f7e626b2", "sub_skills": ["AV.4"], "clusters": ["CL.0096", "CL.0119"], "distractors": [], "why": "SA = 2(4*5+4*6+5*6) = 2(74) = 148. Sum all face areas of rectangular prism."}
+{"id": "099526fc", "sub_skills": ["AV.1"], "clusters": ["CL.0047", "CL.0088", "CL.0113", "CL.0119"], "distractors": [], "why": "Leg = sqrt((3-(-6))^2+(10-4)^2) = 3*sqrt(13). Other leg = 2*36*sqrt(13)/(3*sqrt(13)) = 24."}
+{"id": "f329442c", "sub_skills": ["AV.2", "AV.5"], "clusters": ["CL.0182", "CL.0119"], "distractors": [], "why": "Radius ratio = 129n/(3n) = 43. Area B = 43^2 * area A = 1849 times. Area scales by k^2."}
+{"id": "eb70d2d0", "sub_skills": ["AV.1"], "clusters": ["CL.0113", "CL.0119", "CL.0136"], "distractors": [], "why": "Shoelace formula with vertices (-3,4),(5,3),(4,-3) gives area = 24.5. Coordinate geometry triangle area."}
+{"id": "93de3f84", "sub_skills": ["AV.3", "AV.5"], "clusters": ["CL.0095", "CL.0119", "CL.0182"], "distractors": [], "why": "New cylinder: radius 2r, height h/2. V = pi*(2r)^2*(h/2) = 2*pi*r^2*h = 2*22 = 44. Scaling dimensions."}
+{"id": "f243c383", "sub_skills": ["AV.4"], "clusters": ["CL.0047", "CL.0096", "CL.0104"], "distractors": [], "why": "SA of one prism = 2s^2+360s = K. Glued SA = 2K-2s^2 = (92/47)K. Solve: s = 8."}
+{"id": "1be8b6b2", "sub_skills": ["AV.3", "AV.2"], "clusters": ["CL.0047", "CL.0099", "CL.0118", "CL.0119", "CL.0184"], "distractors": [], "why": "Base area = pi*r^2 gives r=77; volume formula gives h=36; slant = sqrt(77^2+36^2)=85. Uses circle area for radius and cone volume formula."}
+{"id": "dc71597b", "sub_skills": ["AV.3"], "clusters": ["CL.0047", "CL.0099", "CL.0119"], "distractors": [], "why": "(1/3)*pi*r^2*9 = pi/3. r^2 = 1/9, r = 1/3. Isolate radius from cone volume."}
+{"id": "9f934297", "sub_skills": ["AV.4"], "clusters": ["CL.0096", "CL.0119"], "distractors": [], "why": "SA = 2(28*15+28*16+15*16) = 2(1108) = 2216. Sum face areas of rectangular prism."}
+{"id": "5b2b8866", "sub_skills": ["AV.5"], "clusters": ["CL.0106", "CL.0182"], "distractors": [], "why": "20% increase -> multiplier 1.2. New area = 360*(1.2)^2 = 518.4. Area scales by k^2."}
+{"id": "8c1aa743", "sub_skills": ["AV.5"], "clusters": ["CL.0182"], "distractors": [], "why": "Each side of EFGH is 6x ABCD. Area EFGH = 54*36 = 1944. Area scales by k^2."}
+{"id": "6708546e", "sub_skills": ["AV.5"], "clusters": ["CL.0182"], "distractors": [], "why": "Each side of PQRS is 2x ABCD. Area PQRS = 5*4 = 20. Area scales by k^2."}
+{"id": "b0dc920d", "sub_skills": ["AV.3"], "clusters": ["CL.0034", "CL.0095", "CL.0104", "CL.0119"], "distractors": [], "why": "h = r+4. V = pi*r^2*(r+4) = pi*r^3+4*pi*r^2. Substitute and distribute."}
+{"id": "899c6042", "sub_skills": ["AV.3"], "clusters": ["CL.0031", "CL.0119"], "distractors": [], "why": "Diameter 6 -> radius 3. V = (1/3)*pi*9*22 = 66*pi. n = 66."}
+{"id": "ba8ca563", "sub_skills": ["AV.3", "AV.4"], "clusters": ["CL.0096", "CL.0099", "CL.0119"], "distractors": [], "why": "V = s^3 = 474552, s = 78. SA = 6*78^2 = 36504. Cube root then surface area."}
+{"id": "9fec9d49", "sub_skills": ["AV.5"], "clusters": ["CL.0182"], "distractors": [], "why": "Scale factor 1/10. Model area = 600*(1/10)^2 = 6. Area scales by k^2."}
+{"id": "b2528e6b", "sub_skills": ["AV.2"], "clusters": ["CL.0113", "CL.0115", "CL.0119", "CL.0169"], "distractors": [], "why": "Three points define a circle. Find center via perpendicular bisectors, compute radius, C = k*pi."}
+{"id": "502d9690", "sub_skills": ["AV.5"], "clusters": ["CL.0099", "CL.0182"], "distractors": [], "why": "Area ratio = 72/648 = 1/9, k = 1/3. Longest side EFGH = 36/3 = 12. Scale from area ratio to length."}
+{"id": "167aff9e", "sub_skills": ["AV.5"], "clusters": ["CL.0004", "CL.0099", "CL.0182"], "distractors": [], "why": "SA ratio = 1450/58 = 25, k=5. Vol X = 1250/125 = 10. Sum = 1260. Scale SA to k, then k^3 to volume."}
+{"id": "a07ed090", "sub_skills": ["AV.3", "AV.5"], "clusters": ["CL.0095", "CL.0119", "CL.0182"], "distractors": [], "why": "V2 = 392*V1. Check: (7r)^2*(8h) = 49*8*r^2*h = 392*r^2*h. Answer C. Test dimension multiples."}

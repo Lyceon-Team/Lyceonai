@@ -1,0 +1,102 @@
+{"id":"b86123af","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Context gives two conditions (total items, total cost) with two unknowns; asks which system represents the purchase. Translate words into equations involving rate×amount."}
+{"id":"608eeb6e","sub_skills":["SYS.2"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"System given; asks for x+y, not bare x or y. Solve first equation for x, substitute into second, then compute x+y."}
+{"id":"b0fc3166","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"Two equations in y; set equal and solve for x, then substitute back to find y. Asks for bare y."}
+{"id":"cdec4c87","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"Two equations equal to y; substitute one into the other, solve for x, then find y. Asks for bare y."}
+{"id":"dba8d38a","sub_skills":["SYS.1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute y=2 into first equation and solve for x. Asks for bare x."}
+{"id":"f5563c26","sub_skills":["SYS.4"],"clusters":["CL.0060","CL.0017"],"distractors":[],"why":"Context problem: compute 75% of 120 and 10% of 240 separately, then add. Two groups with different rates; find total. Multiply rate by amount and combine."}
+{"id":"e6545fa8","sub_skills":["SYS.5"],"clusters":["CL.0264"],"distractors":[],"why":"Graph of two lines shown; asks for the intersection point (x,y). Read the solution directly from the graph."}
+{"id":"317e80f9","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Second equation is half the first; identical lines. Compare coefficients and constants to determine infinitely many solutions."}
+{"id":"aff28230","sub_skills":["SYS.1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute x=4 into second equation, solve for y. Asks for bare y."}
+{"id":"8abed0fb","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0003","CL.0047"],"distractors":[],"why":"Context: two item types, total count and total cost given. Set up system, eliminate one variable, solve for the other."}
+{"id":"e1259a5a","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"Two equations equal to y; set equal, solve for x, then find y. Asks for (x,y)."}
+{"id":"9db5b5c1","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0003","CL.0047"],"distractors":[],"why":"Context: two ticket types, total tickets and total revenue. Set up system, eliminate one variable, solve for student tickets."}
+{"id":"ca9bb527","sub_skills":["SYS.1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute y=5 into second equation, solve for x. Asks for bare x."}
+{"id":"f88970cc","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Two linear equations; subtract or use elimination to find x. Asks for bare x."}
+{"id":"ffb371f5","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Same slope, different intercepts → parallel lines → zero solutions. Compare coefficients and constants."}
+{"id":"ece00725","sub_skills":["SYS.5"],"clusters":["CL.0264"],"distractors":[],"why":"Graph of two lines shown; read intersection point from the graph."}
+{"id":"e0177f5f","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Add the two equations to eliminate y, solve for x. Asks for bare x."}
+{"id":"ee031767","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Identical equations → infinitely many solutions. Compare coefficients and constants."}
+{"id":"1006cad7","sub_skills":["SYS.1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute x=10 into second equation, solve for y. Asks for bare y."}
+{"id":"939fc21b","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Same slope, different intercepts → parallel → zero solutions. Compare coefficients and constants."}
+{"id":"aacc834b","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"System given; asks for x+y, not bare x or y. Eliminate to find individual values, then compute x+y."}
+{"id":"cd33b015","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Subtract second equation from first to eliminate y, solve for x. Asks for bare x."}
+{"id":"4ec95eab","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Same slope, different intercepts → parallel → zero solutions. Compare coefficients and constants."}
+{"id":"4fb8adf7","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047"],"distractors":[],"why":"Context: two plumbers with different rates; asks when costs are equal. Translate to equations, set equal, solve."}
+{"id":"4b06557b","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"Substitute y=x into second equation, solve for x. Asks for bare x."}
+{"id":"f6b055dc","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Add and subtract equations to find x and y. Asks for bare y."}
+{"id":"0d1dca87","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"Substitute x=y+3 into second equation, solve for y, then find x. Asks for bare x."}
+{"id":"ccc3ad6b","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Add equations to eliminate y, find x; then find y. Asks for bare y."}
+{"id":"cb8f449f","sub_skills":["SYS.1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Solve first equation for y, substitute into second, solve for x. Asks for bare x."}
+{"id":"bf4a8b6a","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Identical equations → infinitely many solutions. Compare coefficients and constants."}
+{"id":"e53688cb","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"System given; asks for 10y, not bare y. Add equations to eliminate y-terms, find x, then compute 10y."}
+{"id":"65833256","sub_skills":["SYS.1"],"clusters":["CL.0016","CL.0003","CL.0047"],"distractors":[],"why":"Clear fractions, then use elimination to solve. Asks for bare y."}
+{"id":"b544a348","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0106","CL.0047"],"distractors":[],"why":"Context: second month is 120% of first, total is 550. Translate percent into multiplier, set up system, solve."}
+{"id":"e3bbde69","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"System given; asks for x−y, an expression, not bare x or y. Use elimination."}
+{"id":"686b7cad","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Same slope (1/3), different intercepts → parallel → zero solutions. Compare coefficients and constants."}
+{"id":"a94ed4e0","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"Substitute y=3x into first equation, solve for x. Asks for bare x."}
+{"id":"2704399f","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Identical equations → infinitely many solutions. Compare coefficients and constants."}
+{"id":"55447be2","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0047","CL.0081"],"distractors":[],"why":"Context: election with more-than-50% condition, 3000 total votes, 180 difference. Translate to system, solve, apply minimum constraint."}
+{"id":"5e422ff9","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Add equations to eliminate y, solve for x. Asks for bare x."}
+{"id":"b3c7ca1d","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"First equation is 2× the second → identical lines → infinitely many solutions. Compare coefficients and constants."}
+{"id":"e77a76ce","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: wire cut into two pieces with sum and difference conditions. Set up system, solve for the longer piece."}
+{"id":"dcc4886a","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0160"],"distractors":[],"why":"Infinitely many solutions requires identical equations; must match slope and intercept. Read slope and intercept from given equation, determine b."}
+{"id":"4e400635","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Same coefficients, different constants → parallel → zero solutions. Compare coefficients and constants."}
+{"id":"2875ba81","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Subtract first from second to eliminate and solve. Asks for bare y."}
+{"id":"6e50ce28","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0003","CL.0047"],"distractors":[],"why":"Context: two item types with total count and total cost. Set up system, use elimination, solve."}
+{"id":"9f6f96ff","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: two buses with different speeds; asks when first is 30 miles ahead. Compute rates, set up distance-difference equation, solve."}
+{"id":"79784c23","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"System given; asks for 4x, not bare x. Subtract equations to find 4x directly."}
+{"id":"bd45df49","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0003","CL.0047"],"distractors":[],"why":"Context: two discount types, total items and total discount. Set up system, eliminate, solve."}
+{"id":"d909cd31","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0094"],"distractors":[],"why":"Set equations equal (both equal y), solve for x=0, substitute back to find y. Asks for bare y."}
+{"id":"092ad67d","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0080"],"distractors":[],"why":"Rewrite second equation to compare: 4y=4x+1 → y=x+1/4, while first is y=4x+1. Different slopes → exactly one solution."}
+{"id":"79be5180","sub_skills":["SYS.2"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"System given; asks for x+y, an expression. Set equations equal, solve for x, find y, compute sum."}
+{"id":"b00ad7f2","sub_skills":["SYS.5"],"clusters":["CL.0264"],"distractors":[],"why":"Graph shows two lines intersecting at one point → exactly one solution. Read from graph."}
+{"id":"c5082ce3","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0003","CL.0047"],"distractors":[],"why":"Context: correct/incorrect answers with different point values, total questions and total score. Set up system, solve."}
+{"id":"a0489274","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0003","CL.0047"],"distractors":[],"why":"Context: two ticket types, total attendance and total revenue. Set up system, use elimination, solve."}
+{"id":"19fdf387","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Add equations to eliminate y, solve for x. Asks for bare x."}
+{"id":"6ba39da5","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Identical equations → infinitely many solutions. Compare coefficients and constants."}
+{"id":"ed92fb68","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Same slope (1/2), different intercepts → parallel → zero solutions. Compare coefficients and constants."}
+{"id":"9a216c0f","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Subtract second from first to eliminate y, solve for x. Asks for bare x."}
+{"id":"8a87c2c8","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Add equations (4y terms cancel), solve for x. Asks for bare x."}
+{"id":"74c03c21","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"Substitute y=4x into first equation, solve for x. Asks for bare x."}
+{"id":"f5929f7a","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Same slope (5/6), different intercepts → parallel → zero solutions. Compare coefficients and constants."}
+{"id":"6e6a3241","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0080"],"distractors":[],"why":"Rewrite both in slope-intercept form; same slope, different intercepts → zero solutions."}
+{"id":"6a87902f","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"Set equations equal (both equal y), solve for x=0, substitute back for y=9. Asks for bare y."}
+{"id":"38a43902","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"Substitute x=y+4 into first equation, solve for y. Asks for bare y."}
+{"id":"0c541d87","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Same slope, different intercepts → parallel → zero solutions. Compare coefficients and constants."}
+{"id":"71189542","sub_skills":["SYS.5"],"clusters":["CL.0264"],"distractors":[],"why":"Graph shows two parallel lines → zero solutions. Read from graph."}
+{"id":"73b3b7d8","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"System given; asks for 30x, not bare x. Add equations to find x, then multiply by 30."}
+{"id":"27f5fff3","sub_skills":["SYS.5","SYS.3"],"clusters":["CL.0264","CL.0009"],"distractors":[],"why":"Graph shows intersection at (8,2); adding a third equation x+4y=−16 — check if (8,2) satisfies it. If not, the three-equation system has zero solutions."}
+{"id":"5e08a055","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0080"],"distractors":[],"why":"No solution requires same slope, different intercept. Rewrite given equation as −6x+y=18; find which choice has slope 6 but different intercept."}
+{"id":"75012ee7","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"Equations are multiples (infinitely many solutions); asks which parametric point lies on both. Solve for y in terms of parameter r."}
+{"id":"3a84f885","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"System with grouped terms; add equations to eliminate (y+7) terms, solve for (x−2), then compute 6(x−2). Asks for expression value."}
+{"id":"567ac7ab","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0080"],"distractors":[],"why":"No solution requires proportional coefficients with different constant ratio. Simplify given equation, check each choice."}
+{"id":"a71b1bc1","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047"],"distractors":[],"why":"Context: wire cut into two pieces with sum=32 and x=3y+4. Translate to system, substitute, solve for x."}
+{"id":"14360f84","sub_skills":["SYS.3"],"clusters":["CL.0080","CL.0133"],"distractors":[],"why":"Rearrange first equation to standard form, compare with second; no solution requires same slope with different intercept. Solve for h."}
+{"id":"59352689","sub_skills":["SYS.3"],"clusters":["CL.0016","CL.0080","CL.0133"],"distractors":[],"why":"Clear fractions, rearrange both equations to slope-intercept form; no solution requires matching slopes. Solve for p."}
+{"id":"fb5e7f59","sub_skills":["SYS.1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute (q,19) into both equations to get two equations in q and w; solve for w."}
+{"id":"1e11190a","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0003","CL.0047"],"distractors":[],"why":"Context: two stores with different prices for same items; two cost equations. Set up system, use elimination, solve."}
+{"id":"1e0a46e4","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0080"],"distractors":[],"why":"Identify which system has proportional coefficients with non-proportional constants (parallel lines → no solution)."}
+{"id":"f03465dc","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"Equations are multiples (infinitely many solutions); asks which parametric point lies on both graphs."}
+{"id":"e2e3942f","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"No solution requires same slope → a=2. Compare coefficients."}
+{"id":"570b5a5d","sub_skills":["SYS.2"],"clusters":["CL.0003"],"distractors":[],"why":"System given; asks for (17/2)x+18y. Notice this is the sum of the left sides of both equations → add the right sides."}
+{"id":"466b87e3","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"No solution requires same slope → c=1/2. Compare coefficients."}
+{"id":"f718c9cf","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"System given; asks for xy, an expression. Solve system by elimination, then multiply x and y."}
+{"id":"36fd6752","sub_skills":["SYS.3"],"clusters":["CL.0017","CL.0080","CL.0133"],"distractors":[],"why":"Rearrange second equation; no solution requires matching coefficients with different constants. Solve for p."}
+{"id":"d7bf55e1","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0003","CL.0047"],"distractors":[],"why":"Context: two ticket types, total tickets and total revenue. Set up system, solve for adult count, multiply by price."}
+{"id":"adb0c96c","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Subtract second equation from first to eliminate y, solve for x, then find y. Asks for bare y."}
+{"id":"45a534d0","sub_skills":["SYS.3"],"clusters":["CL.0017","CL.0080","CL.0133"],"distractors":[],"why":"Rearrange first equation, compare with second in standard form; no solution requires proportional coefficients. Solve for r."}
+{"id":"7866a908","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"Context: alloy mixture with two pieces at different percentages. Set up system using mass and percent constraints, solve."}
+{"id":"52cb8ea4","sub_skills":["SYS.2"],"clusters":["CL.0003"],"distractors":[],"why":"System given; asks for 3x+3y. Subtract second equation from first to get 3x+3y directly."}
+{"id":"1362ccde","sub_skills":["SYS.2"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"System given; asks for x−y. Substitute first into second, solve for x, find y, compute difference."}
+{"id":"e1248a5c","sub_skills":["SYS.3"],"clusters":["CL.0016","CL.0133"],"distractors":[],"why":"Infinite solutions requires equations to be multiples. Clear fractions from first equation, compare with second to find a."}
+{"id":"70feb725","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: running and biking with total distance and time relationship. Set up system using distance=rate×time, solve."}
+{"id":"f75bd744","sub_skills":["SYS.3"],"clusters":["CL.0017","CL.0080","CL.0133"],"distractors":[],"why":"Rearrange first equation; no solution requires matching slope ratios. Solve for t."}
+{"id":"b5f62071","sub_skills":["SYS.3"],"clusters":["CL.0017","CL.0080","CL.0133"],"distractors":[],"why":"Rearrange first equation; no solution requires matching coefficient ratios with different constant ratio. Solve for r."}
+{"id":"4f1342d6","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047"],"distractors":[],"why":"Context: August sales = 3×September +15, sum=363. Translate to system, substitute, solve."}
+{"id":"797a81fb","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Second equation is half the first with different constant → parallel → zero solutions. Compare coefficients and constants."}
+{"id":"979c6ebc","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"Equations are multiples (infinitely many solutions); asks which parametric point lies on both graphs."}
+{"id":"571174f3","sub_skills":["SYS.3"],"clusters":["CL.0016","CL.0133"],"distractors":[],"why":"Infinite solutions → equations are proportional. Find the multiplier, determine g/k ratio."}
+{"id":"1b1deebe","sub_skills":["SYS.1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute x=4 into both equations to create two equations in a, b, y; solve for a."}
+{"id":"ff501705","sub_skills":["SYS.3"],"clusters":["CL.0016","CL.0017","CL.0133"],"distractors":[],"why":"Clear fractions, rearrange both equations; no solution requires same slope. Solve for p."}
+{"id":"d1b66ae6","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Add equations to eliminate x, solve for y. Asks for bare y."}
+{"id":"4becad44","sub_skills":["SYS.3"],"clusters":["CL.0080","CL.0133"],"distractors":[],"why":"No solution requires same slope, different intercept. Rewrite given equation in slope-intercept form, check each choice."}

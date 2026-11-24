@@ -1,0 +1,226 @@
+{"id":"7f2524bf","sub_skills":["NLF.1","NLF.2"],"clusters":["CL.0084"],"distractors":[],"why":"Graph y-intercept gives value at purchase; verbal context answer choices"}
+{"id":"e9aed539","sub_skills":["NLF.5"],"clusters":["CL.0087"],"distractors":[],"why":"Parabola translated up 4 units"}
+{"id":"4fbffc0a","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret marked point on parabola in context"}
+{"id":"6abec9a8","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read y-intercept from graph"}
+{"id":"1ee962ec","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Read table values from parabola graph"}
+{"id":"07bcecac","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret P(8)≈32.91 in context"}
+{"id":"788bfd56","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(144) for f(x)=4+√x"}
+{"id":"369b7bb7","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate g(3) for g(x)=√(8x+1)"}
+{"id":"cc2601cb","sub_skills":["NLF.1","NLF.4"],"clusters":["CL.0163"],"distractors":[],"why":"Read x-intercept of parabola from graph"}
+{"id":"b39d74a0","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Match table of values to graph"}
+{"id":"837e9da7","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(3) for f(x)=1/(6x)"}
+{"id":"b5c43226","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read y-intercept of exponential graph"}
+{"id":"2fec8bf4","sub_skills":["NLF.2"],"clusters":["CL.0150","CL.0084"],"distractors":[],"why":"Interpret P(0)=1800 in context"}
+{"id":"e166aca6","sub_skills":["NLF.1","NLF.4"],"clusters":["CL.0163"],"distractors":[],"why":"Read x-intercept of parabola from graph"}
+{"id":"cfff8f8e","sub_skills":["NLF.3"],"clusters":["CL.0127"],"distractors":[],"why":"Write exponential doubling model"}
+{"id":"ad376f1a","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read f(0) from graph"}
+{"id":"bd4d0e0c","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(0) for quadratic"}
+{"id":"c13016f9","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(2) for x²+x+71"}
+{"id":"2d394c28","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Read predicted value from scatter plot"}
+{"id":"2b6c12eb","sub_skills":["NLF.1","NLF.4"],"clusters":["CL.0163"],"distractors":[],"why":"Read x-intercept of parabola"}
+{"id":"79e6ec70","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read x-intercept of decreasing curve"}
+{"id":"5377d9cf","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(-1) for rational expression"}
+{"id":"75915e3c","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0006"],"distractors":[],"why":"Evaluate f(2) for 2(3)^x using exponent rules"}
+{"id":"f547a8b1","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read y-intercept of exponential graph"}
+{"id":"2f4eafcc","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read y-intercept of parabola"}
+{"id":"9da41c80","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0154"],"distractors":[],"why":"Interpret 22 in h(n)=22(0.85)^n as initial height"}
+{"id":"7160cbb3","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read y-intercept of curve"}
+{"id":"20722644","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(2) for x³+9"}
+{"id":"7fe7cf26","sub_skills":["NLF.5"],"clusters":["CL.0087"],"distractors":[],"why":"Ball launched 20ft higher is vertical shift"}
+{"id":"5e63b9cf","sub_skills":["NLF.2"],"clusters":["CL.0150","CL.0084"],"distractors":[],"why":"Interpret y-intercept of marble height in context"}
+{"id":"94ff3e2d","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate h(2) for 8/(5x+6)"}
+{"id":"72ae8a87","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret f(5)≈518748 in context"}
+{"id":"09f58996","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(36) for 6+√x"}
+{"id":"d84a514a","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret f(5)≈648650 in context"}
+{"id":"ebe4bde0","sub_skills":["NLF.1","NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Read peak elevation from quadratic graph"}
+{"id":"c99d154a","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read y-coordinate of y-intercept"}
+{"id":"893c7519","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read y-intercept of exponential"}
+{"id":"3ea87153","sub_skills":["NLF.1"],"clusters":["CL.0047","CL.0099"],"distractors":[],"why":"Solve g(x)=25 for g(x)=x²+9 by isolating and square root"}
+{"id":"d46da42c","sub_skills":["NLF.4"],"clusters":["CL.0156","CL.0084"],"distractors":[],"why":"Match f(x)=x²+4 to its graph"}
+{"id":"0ad5012e","sub_skills":["NLF.2"],"clusters":["CL.0150","CL.0084"],"distractors":[],"why":"Interpret y-intercept of delivery model in context"}
+{"id":"5a74f696","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0078"],"distractors":[],"why":"Exponential doubling with time scaling in exponent"}
+{"id":"1863e3be","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"y-intercept of y=x²+31 is 31"}
+{"id":"ca4ee54e","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Read predicted value from depreciation curve"}
+{"id":"c1eead73","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate g(4) for |x+18|"}
+{"id":"04b985e6","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret K(34)=5202 in context"}
+{"id":"2cf7f039","sub_skills":["NLF.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve f(x)=48 for f(x)=8√x"}
+{"id":"d45572cc","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read f(0) from graph"}
+{"id":"79ba511a","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(2) for x³+15"}
+{"id":"26f5269a","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read y-intercept from polynomial graph"}
+{"id":"50418728","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read y-intercept of polynomial graph"}
+{"id":"ee05c84e","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(20) for revenue expression"}
+{"id":"782a8a53","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Read vertex of parabola from graph"}
+{"id":"39652e93","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(17) for 16/x"}
+{"id":"044c1cb7","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Match h(x)=x²-3 to table values"}
+{"id":"de362c2f","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(8) for 5x²"}
+{"id":"02c67921","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"Read y-intercept of exponential graph"}
+{"id":"100030d9","sub_skills":["NLF.3"],"clusters":["CL.0006","CL.0094"],"distractors":[],"why":"Rubber ball max height between bounces using exponent rules"}
+{"id":"7ba694f3","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0154","CL.0078"],"distractors":[],"why":"Interpret 4 in y=44000(2)^(t/4) as doubling period"}
+{"id":"c7a187a7","sub_skills":["NLF.4"],"clusters":["CL.0037","CL.0122"],"distractors":[],"why":"Factor x²-18x-360 to find x-intercept"}
+{"id":"a26c29f7","sub_skills":["NLF.5"],"clusters":["CL.0087"],"distractors":[],"why":"g(x) is f(x)=7x³ shifted down 2"}
+{"id":"99269e03","sub_skills":["NLF.1","NLF.3"],"clusters":["CL.0094"],"distractors":[],"why":"Find a in y=4(2)^x+3 from table"}
+{"id":"e1391dd6","sub_skills":["NLF.3"],"clusters":["CL.0006","CL.0078"],"distractors":[],"why":"Moore's law doubling with time scaling"}
+{"id":"3c600337","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0006"],"distractors":[],"why":"Evaluate f(0) for 270(0.1)^x"}
+{"id":"4209aefe","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret f(5)≈243 for art value"}
+{"id":"f1fa0821","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Estimate population increase from graph"}
+{"id":"5bf0f84a","sub_skills":["NLF.2"],"clusters":["CL.0154","CL.0084"],"distractors":[],"why":"Interpret 72 in h(t)=-16t²+110t+72 as launch height"}
+{"id":"c048055c","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0106"],"distractors":[],"why":"Write p=15000(1.04)^x for 4% growth"}
+{"id":"70ebd3d0","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0154","CL.0198"],"distractors":[],"why":"Interpret 0.90 in N(d)=115(0.90)^d as decay factor"}
+{"id":"45df91ee","sub_skills":["NLF.1","NLF.3"],"clusters":["CL.0084","CL.0006"],"distractors":[],"why":"y-intercept of g(x)=11(1/12)^x"}
+{"id":"7f87deff","sub_skills":["NLF.4"],"clusters":["CL.0163","CL.0122"],"distractors":[],"why":"Positive x-intercept of y=3(x-14)(x+5)(x+4)"}
+{"id":"97158b3a","sub_skills":["NLF.1"],"clusters":["CL.0150"],"distractors":[],"why":"Find length from area expression w(w+29)"}
+{"id":"d8ace155","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0089"],"distractors":[],"why":"Match exponential model for account balance"}
+{"id":"dba7432e","sub_skills":["NLF.3"],"clusters":["CL.0198","CL.0094"],"distractors":[],"why":"Identify decay equation from table"}
+{"id":"cbc4c163","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(1/4) for quadratic"}
+{"id":"f1c81b3b","sub_skills":["NLF.1","NLF.3"],"clusters":["CL.0089","CL.0094"],"distractors":[],"why":"Find constant a then evaluate g(4)"}
+{"id":"c19d1fb0","sub_skills":["NLF.1","NLF.2"],"clusters":["CL.0084"],"distractors":[],"why":"Initial height from h=-4.9t²+9t+18 is y-intercept in context"}
+{"id":"0aaef7aa","sub_skills":["NLF.1"],"clusters":["CL.0047","CL.0099"],"distractors":[],"why":"Solve p(n)=56 for p(n)=7n³"}
+{"id":"b7cd6ca6","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0154","CL.0084"],"distractors":[],"why":"Interpret 5 in E(t)=5(1.8)^t as initial value"}
+{"id":"0af701e7","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Absolute value evaluation and solving f(5)-f(a)=-15"}
+{"id":"4880eecb","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0037"],"distractors":[],"why":"Set up x(x+8)=180 and solve quadratic"}
+{"id":"f5e8ccf1","sub_skills":["NLF.4"],"clusters":["CL.0163","CL.0122"],"distractors":[],"why":"Identify which is NOT an x-intercept of factored polynomial"}
+{"id":"aa95fb33","sub_skills":["NLF.5"],"clusters":["CL.0087"],"distractors":[],"why":"Graph of f(x)+5 is vertical shift up"}
+{"id":"3918e8bc","sub_skills":["NLF.2"],"clusters":["CL.0154","CL.0084"],"distractors":[],"why":"Interpret initial height from which object kicked"}
+{"id":"7e5a3640","sub_skills":["NLF.3"],"clusters":["CL.0006","CL.0078"],"distractors":[],"why":"Bacteria doubling every 3 hours with exponent scaling"}
+{"id":"52e589f9","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret m(330)≈362 in context"}
+{"id":"4993b828","sub_skills":["NLF.1"],"clusters":["CL.0150"],"distractors":[],"why":"Find length from area w(w+9)"}
+{"id":"981aca65","sub_skills":["NLF.5"],"clusters":["CL.0087"],"distractors":[],"why":"Translation 3 down 4 right"}
+{"id":"7a4475df","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0106"],"distractors":[],"why":"Write exponential for 3% growth"}
+{"id":"5c00c2c1","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0106"],"distractors":[],"why":"Write exponential for jackrabbit population"}
+{"id":"281a4f3b","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0106"],"distractors":[],"why":"Write exponential decay 2% less each year"}
+{"id":"9ff88bb5","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret x-intercept of diver height in context"}
+{"id":"dbe9b217","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(2) for 8x³+4"}
+{"id":"dd8ac009","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0078"],"distractors":[],"why":"Exponential savings model from table with time scaling"}
+{"id":"90bcaa61","sub_skills":["NLF.3"],"clusters":["CL.0078"],"distractors":[],"why":"Bacteria doubling time from exponent structure"}
+{"id":"6676f055","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Find vertex/max of airflow quadratic"}
+{"id":"d71f6dbf","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret h(1.4)≈1.64 in context"}
+{"id":"f44a29a8","sub_skills":["NLF.1"],"clusters":["CL.0047","CL.0099"],"distractors":[],"why":"Solve K=½(4)v²=18 for v"}
+{"id":"44076c7d","sub_skills":["NLF.1","NLF.4"],"clusters":["CL.0094","CL.0101"],"distractors":[],"why":"Match quadratic to table by testing choices"}
+{"id":"67f4b449","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret f(14)=1176 in context"}
+{"id":"f880f910","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0037"],"distractors":[],"why":"Triangle area model, solve quadratic"}
+{"id":"d675744f","sub_skills":["NLF.3"],"clusters":["CL.0156","CL.0198"],"distractors":[],"why":"Match y=4(2^x) to its graph"}
+{"id":"78d5f91a","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(-1) for cubic polynomial"}
+{"id":"68607eca","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0078"],"distractors":[],"why":"70% increase every 2 days with time scaling"}
+{"id":"735a0a00","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret (1,83) on stock price graph"}
+{"id":"dc77e0dc","sub_skills":["NLF.1","NLF.3"],"clusters":["CL.0084"],"distractors":[],"why":"Intensity at surface t=0 is y-intercept of exponential"}
+{"id":"c4cd5bcc","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"y-intercept = f(0) conceptual question"}
+{"id":"203774bc","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0037"],"distractors":[],"why":"Product of consecutives=546, solve quadratic"}
+{"id":"6ecdbcb4","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0122"],"distractors":[],"why":"Evaluate f(x)=(x+6)(x+5)(x-4), then y=f(x)-3"}
+{"id":"db888cd6","sub_skills":["NLF.2"],"clusters":["CL.0150","CL.0084"],"distractors":[],"why":"Interpret y-intercept of catalog graph in context"}
+{"id":"197bed38","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Identify increasing interval from graph"}
+{"id":"a31417d1","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0106"],"distractors":[],"why":"15% decrease per year exponential model"}
+{"id":"e1f9000d","sub_skills":["NLF.4"],"clusters":["CL.0047","CL.0099"],"distractors":[],"why":"Solve h=-16t²+b for t"}
+{"id":"be0c419e","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret f(8)≈82 for coin value"}
+{"id":"c4259674","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0006"],"distractors":[],"why":"Evaluate f(21) for 4x⁻¹"}
+{"id":"50e40f08","sub_skills":["NLF.4"],"clusters":["CL.0163","CL.0122"],"distractors":[],"why":"Find x-intercept of (x+6)(x-4)"}
+{"id":"f28944ff","sub_skills":["NLF.1","NLF.3"],"clusters":["CL.0094","CL.0006"],"distractors":[],"why":"Match table to q(x)=32(2^x)"}
+{"id":"15c364bf","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret s(87)≈23 for radioactive substance"}
+{"id":"341ba5db","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Minimum of g(x)=x²+55 is at vertex"}
+{"id":"dd3b1e1a","sub_skills":["NLF.1"],"clusters":["CL.0084"],"distractors":[],"why":"y-intercept of x⁵+9x+17 is 17"}
+{"id":"752055d1","sub_skills":["NLF.3"],"clusters":["CL.0089","CL.0078"],"distractors":[],"why":"Solve for r in P=C(2)^(rt)"}
+{"id":"d4950429","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0037"],"distractors":[],"why":"Rectangle area model, solve quadratic"}
+{"id":"95d1c344","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Read value from graph at specific date"}
+{"id":"cc6ccd71","sub_skills":["NLF.1"],"clusters":["CL.0163"],"distractors":[],"why":"Count x-intercepts of cubic graph"}
+{"id":"252a3b3a","sub_skills":["NLF.4"],"clusters":["CL.0156","CL.0163"],"distractors":[],"why":"Match polynomial equation to graph using zeros"}
+{"id":"926c246b","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0154","CL.0084"],"distractors":[],"why":"Interpret initial value 5640 in exponential context"}
+{"id":"4618501a","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0154","CL.0084"],"distractors":[],"why":"Interpret initial value 3000 in exponential context"}
+{"id":"e53add44","sub_skills":["NLF.3"],"clusters":["CL.0106"],"distractors":[],"why":"Find a for 4% increase using percent-to-multiplier"}
+{"id":"768b60d2","sub_skills":["NLF.3"],"clusters":["CL.0084","CL.0094"],"distractors":[],"why":"Identify equation with visible constant c"}
+{"id":"f89af023","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Volleyball court dimensions, solve equation"}
+{"id":"02add2d2","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0106"],"distractors":[],"why":"7% per month growth exponential model"}
+{"id":"ae05d37b","sub_skills":["NLF.3"],"clusters":["CL.0078"],"distractors":[],"why":"Bacteria doubling time from exponent"}
+{"id":"1d3c5c95","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0154","CL.0084"],"distractors":[],"why":"Interpret initial value 4000 in exponential context"}
+{"id":"f423771c","sub_skills":["NLF.3"],"clusters":["CL.0094","CL.0078"],"distractors":[],"why":"Match exponential to table with time scaling"}
+{"id":"ff8c5844","sub_skills":["NLF.3"],"clusters":["CL.0094","CL.0006"],"distractors":[],"why":"Identify exponential from table pattern"}
+{"id":"52b1700c","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0078"],"distractors":[],"why":"Match savings model with time scaling"}
+{"id":"cb29c54c","sub_skills":["NLF.2","NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Interpret vertex of rocket height as max"}
+{"id":"39714777","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Minimum of p(x)+57=x² rearranged"}
+{"id":"beca03de","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret 15w in area expression"}
+{"id":"301faf80","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0037"],"distractors":[],"why":"Product of consecutives=462, solve quadratic"}
+{"id":"128c75e2","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate product g(15a)·g(7a) for absolute value"}
+{"id":"02060533","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0095"],"distractors":[],"why":"Find y-intercept of f from g(x)=f(x)/(x+3)"}
+{"id":"91e7ea5e","sub_skills":["NLF.4"],"clusters":["CL.0122","CL.0047"],"distractors":[],"why":"Find second x-intercept of h(x)=2(x-4)²-32"}
+{"id":"358f18bc","sub_skills":["NLF.4"],"clusters":["CL.0043"],"distractors":[],"why":"Minimum of x²-48x+2304 via vertex formula"}
+{"id":"8490cc45","sub_skills":["NLF.1","NLF.3"],"clusters":["CL.0084","CL.0094"],"distractors":[],"why":"y-intercept of (-8)(2)^x+22"}
+{"id":"ebed7dc6","sub_skills":["NLF.4"],"clusters":["CL.0037","CL.0122"],"distractors":[],"why":"Find max x where y≥0 by factoring"}
+{"id":"a9084ca4","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0154","CL.0084"],"distractors":[],"why":"Interpret y-intercept of 9000(0.66)^x"}
+{"id":"2c6f214f","sub_skills":["NLF.3"],"clusters":["CL.0127"],"distractors":[],"why":"Write geometric sequence equation"}
+{"id":"781c2f6e","sub_skills":["NLF.3"],"clusters":["CL.0159"],"distractors":[],"why":"Which form displays y-intercept as constant"}
+{"id":"b8f13a3a","sub_skills":["NLF.3"],"clusters":["CL.0089","CL.0047"],"distractors":[],"why":"Solve for a in -a^x+b using given points"}
+{"id":"8e1da169","sub_skills":["NLF.4"],"clusters":["CL.0043"],"distractors":[],"why":"Min of (x-44)(x-46) via midpoint of zeros"}
+{"id":"40491607","sub_skills":["NLF.5"],"clusters":["CL.0087","CL.0094"],"distractors":[],"why":"Shift f up 6 to get g, evaluate g(4)"}
+{"id":"7902bed0","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Write vertex form for softball trajectory"}
+{"id":"4a0d0399","sub_skills":["NLF.3"],"clusters":["CL.0089","CL.0047"],"distractors":[],"why":"Solve for b in a^x+b using points"}
+{"id":"9654add7","sub_skills":["NLF.2","NLF.4"],"clusters":["CL.0150","CL.0163"],"distractors":[],"why":"Interpret x-intercept of revenue in context"}
+{"id":"263f9937","sub_skills":["NLF.3"],"clusters":["CL.0006","CL.0078"],"distractors":[],"why":"Bacteria doubling, find day exceeding threshold"}
+{"id":"4dd4efcf","sub_skills":["NLF.4"],"clusters":["CL.0043","CL.0053"],"distractors":[],"why":"Parabola properties from coefficients"}
+{"id":"2992ac30","sub_skills":["NLF.3"],"clusters":["CL.0078"],"distractors":[],"why":"Exponential time scaling, find n"}
+{"id":"841ef26c","sub_skills":["NLF.4","NLF.5"],"clusters":["CL.0043","CL.0087"],"distractors":[],"why":"g(x)=f(x+5) shifts vertex, find min of g"}
+{"id":"09d21d79","sub_skills":["NLF.4"],"clusters":["CL.0053","CL.0156"],"distractors":[],"why":"Find bc from parabola graph matching"}
+{"id":"d135f4bf","sub_skills":["NLF.5"],"clusters":["CL.0087","CL.0094"],"distractors":[],"why":"Translate up 4, evaluate g(0)"}
+{"id":"271ffad7","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Projectile returns to launch height from vertex form"}
+{"id":"ee857afb","sub_skills":["NLF.4"],"clusters":["CL.0043"],"distractors":[],"why":"Min of x²-14x+22 via vertex"}
+{"id":"35e05e19","sub_skills":["NLF.1"],"clusters":["CL.0104"],"distractors":[],"why":"Volume V=11x(x-1) function setup"}
+{"id":"a45ffacb","sub_skills":["NLF.3"],"clusters":["CL.0089","CL.0047"],"distractors":[],"why":"Solve for a in -a^x+b using given points"}
+{"id":"821e724e","sub_skills":["NLF.4"],"clusters":["CL.0122","CL.0094"],"distractors":[],"why":"Evaluate g(0) for (x+14)(t-x) with parameter"}
+{"id":"d8e84431","sub_skills":["NLF.4"],"clusters":["CL.0104"],"distractors":[],"why":"Rectangle area equation setup"}
+{"id":"18e35375","sub_skills":["NLF.4"],"clusters":["CL.0043"],"distractors":[],"why":"Min of (x-14)(x+19) via midpoint"}
+{"id":"ce508fb0","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Nested absolute value function evaluation"}
+{"id":"8462b105","sub_skills":["NLF.1"],"clusters":["CL.0104"],"distractors":[],"why":"Write function x(x+91) for area"}
+{"id":"ce579859","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0106"],"distractors":[],"why":"150% more each year exponential model"}
+{"id":"2f51abc2","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Solve |59-2x|=3k"}
+{"id":"d139cf4b","sub_skills":["NLF.4","NLF.5"],"clusters":["CL.0043","CL.0087"],"distractors":[],"why":"Max of g(t)=f(t)+3 shifts vertex up"}
+{"id":"9afe2370","sub_skills":["NLF.3"],"clusters":["CL.0198"],"distractors":[],"why":"Determine constraint on r for growth/decay"}
+{"id":"df71424b","sub_skills":["NLF.3"],"clusters":["CL.0156"],"distractors":[],"why":"Count zeros from exponential graph"}
+{"id":"b7c74b73","sub_skills":["NLF.3"],"clusters":["CL.0078","CL.0106"],"distractors":[],"why":"Annual % decrease from fractional exponent"}
+{"id":"f2d60b99","sub_skills":["NLF.2","NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Interpret vertex of ball height as max"}
+{"id":"1f353a9e","sub_skills":["NLF.2","NLF.3"],"clusters":["CL.0154","CL.0084"],"distractors":[],"why":"Interpret y-intercept of 8000(0.65)^t"}
+{"id":"270cf326","sub_skills":["NLF.3"],"clusters":["CL.0198","CL.0084"],"distractors":[],"why":"Which function has minimum at -3"}
+{"id":"92f812bb","sub_skills":["NLF.4"],"clusters":["CL.0094","CL.0043"],"distractors":[],"why":"Vertex (9,-14), find a+b+c from expansion"}
+{"id":"0121a235","sub_skills":["NLF.4"],"clusters":["CL.0122","CL.0094"],"distractors":[],"why":"Factor of polynomial from table of values"}
+{"id":"bba18ecb","sub_skills":["NLF.4"],"clusters":["CL.0043"],"distractors":[],"why":"Vertex symmetry to find other x-intercept"}
+{"id":"668f1863","sub_skills":["NLF.4"],"clusters":["CL.0043"],"distractors":[],"why":"Vertex x from midpoint of zeros"}
+{"id":"70753f99","sub_skills":["NLF.4"],"clusters":["CL.0043","CL.0163"],"distractors":[],"why":"Vertex interval from factored form zeros"}
+{"id":"55c5d3c2","sub_skills":["NLF.3"],"clusters":["CL.0089","CL.0047"],"distractors":[],"why":"Solve constants in f(x)=a^x+b from two points"}
+{"id":"58dcc59f","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0037"],"distractors":[],"why":"Rectangle length=w+5, area=104, solve"}
+{"id":"2d1614a1","sub_skills":["NLF.3"],"clusters":["CL.0078","CL.0106"],"distractors":[],"why":"P(t)=290(1.04)^((4/3)t), find n% per 18mo"}
+{"id":"84dd43f8","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0094"],"distractors":[],"why":"Decreases 80% per step, evaluate f(2)"}
+{"id":"59d1f4b5","sub_skills":["NLF.3"],"clusters":["CL.0078"],"distractors":[],"why":"M=1800(1.02)^t quarterly model rewrite"}
+{"id":"48f83c34","sub_skills":["NLF.1"],"clusters":["CL.0104"],"distractors":[],"why":"Rectangular prism volume function"}
+{"id":"6e7ae9fc","sub_skills":["NLF.4"],"clusters":["CL.0122","CL.0094"],"distractors":[],"why":"g(x)=x(x-2)(x+6)², g(7-w)=0, find sum of w"}
+{"id":"1a722d7d","sub_skills":["NLF.1"],"clusters":["CL.0089","CL.0094"],"distractors":[],"why":"Solve for c from p(c)=10 then evaluate p(12)"}
+{"id":"a7711fe8","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Minimum of (x-2)²-4 from vertex form"}
+{"id":"161126cf","sub_skills":["NLF.3"],"clusters":["CL.0078","CL.0106"],"distractors":[],"why":"Rewrite (1.84)^(x/4) as (1+p/100)^x"}
+{"id":"a8ae0d22","sub_skills":["NLF.3"],"clusters":["CL.0127"],"distractors":[],"why":"Each x+1 multiplies y by 4, initial y=200"}
+{"id":"1853bb35","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0106"],"distractors":[],"why":"45% decrease, q(0)=14 exponential model"}
+{"id":"a58232b7","sub_skills":["NLF.3"],"clusters":["CL.0159"],"distractors":[],"why":"Which form displays minimum as constant"}
+{"id":"7e6ea718","sub_skills":["NLF.4"],"clusters":["CL.0163"],"distractors":[],"why":"Count distinct x-intercepts of polynomial"}
+{"id":"4d7064a6","sub_skills":["NLF.4"],"clusters":["CL.0043"],"distractors":[],"why":"Min of (x-10)(x+13) via midpoint"}
+{"id":"f25a34aa","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0037"],"distractors":[],"why":"Triangle area=x², solve for x"}
+{"id":"4d037075","sub_skills":["NLF.5"],"clusters":["CL.0087","CL.0094"],"distractors":[],"why":"f(x)=a/(x+b), g(x)=f(x+4) horizontal shift"}
+{"id":"43926bd9","sub_skills":["NLF.3"],"clusters":["CL.0094","CL.0078"],"distractors":[],"why":"Exponential table pattern, find k"}
+{"id":"7eed640d","sub_skills":["NLF.2","NLF.4"],"clusters":["CL.0150","CL.0163"],"distractors":[],"why":"Meaning of positive x-intercept in context"}
+{"id":"08d03fe4","sub_skills":["NLF.3"],"clusters":["CL.0159"],"distractors":[],"why":"Which equation form has k as coefficient/base"}
+{"id":"b73ee6cf","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0106"],"distractors":[],"why":"Population 50k, 3% growth, model to reach 60k"}
+{"id":"1fe10d97","sub_skills":["NLF.3"],"clusters":["CL.0078"],"distractors":[],"why":"p(t)=90000(1.06)^t rewrite for monthly model"}
+{"id":"1073d70c","sub_skills":["NLF.3"],"clusters":["CL.0127","CL.0106"],"distractors":[],"why":"40 comments, 190% increase per hour"}
+{"id":"2b1a27cd","sub_skills":["NLF.4"],"clusters":["CL.0162","CL.0094"],"distractors":[],"why":"Seal dive quadratic, evaluate depth at t=10"}
+{"id":"dcf63c94","sub_skills":["NLF.5"],"clusters":["CL.0087","CL.0094"],"distractors":[],"why":"f(x)=272(2)^x, h(x)=f(x-4) horizontal shift"}
+{"id":"04bbce67","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Min x of (x+7)²+4 from vertex form"}
+{"id":"7a6d06bf","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0037"],"distractors":[],"why":"Rectangle area=155, length=7w-4, solve"}
+{"id":"f44b4125","sub_skills":["NLF.3"],"clusters":["CL.0159"],"distractors":[],"why":"Which form displays max for x≥0"}
+{"id":"0e61101e","sub_skills":["NLF.5"],"clusters":["CL.0087","CL.0094"],"distractors":[],"why":"f(x)=9(4)^x, g(x)=f(x+2) horizontal shift"}
+{"id":"083ef63a","sub_skills":["NLF.4"],"clusters":["CL.0043"],"distractors":[],"why":"Min of (x-2)(x+15) via midpoint"}
+{"id":"9f2ecade","sub_skills":["NLF.4"],"clusters":["CL.0122","CL.0053"],"distractors":[],"why":"Cubic with zeros -5,6,7, find c"}
+{"id":"6d9e01a2","sub_skills":["NLF.4"],"clusters":["CL.0043"],"distractors":[],"why":"Min of 4x²-50x+126 via vertex formula"}
+{"id":"f678483b","sub_skills":["NLF.2","NLF.4"],"clusters":["CL.0163"],"distractors":[],"why":"Submersible reaches surface, interpret x-intercept"}
+{"id":"cd358b89","sub_skills":["NLF.5"],"clusters":["CL.0087","CL.0122"],"distractors":[],"why":"f(x)=(x+6)(x+5)(x+1), g(x)=f(x-1), sum of intercepts"}
+{"id":"84e8cc72","sub_skills":["NLF.4"],"clusters":["CL.0162","CL.0094"],"distractors":[],"why":"Vertex(8,1034), find h(10) from quadratic"}
+{"id":"1178f2df","sub_skills":["NLF.4"],"clusters":["CL.0043","CL.0094"],"distractors":[],"why":"Table with y=f(x)+4, f quadratic, find y-intercept"}
+{"id":"d41cf4d3","sub_skills":["NLF.1"],"clusters":["CL.0089","CL.0094"],"distractors":[],"why":"f(x)=a√(x+b) through (-24,0), determine f(24) sign"}
+{"id":"de39858a","sub_skills":["NLF.3"],"clusters":["CL.0089","CL.0047"],"distractors":[],"why":"h(x)=a^x+b, two points, find ab"}
+{"id":"70fb357b","sub_skills":["NLF.3"],"clusters":["CL.0159","CL.0084"],"distractors":[],"why":"y=576^(2x+2), which form shows y-intercept"}
+{"id":"635f54ee","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Cube surface area, find face perimeter"}
+{"id":"ef926848","sub_skills":["NLF.1"],"clusters":["CL.0104"],"distractors":[],"why":"Square Q area function from perimeter relation"}
+{"id":"95eeeb5b","sub_skills":["NLF.4"],"clusters":["CL.0122","CL.0053"],"distractors":[],"why":"f(x)=ax²+bx+c, zeros 7 and -3, a>1, find a+b"}
+{"id":"01668cd6","sub_skills":["NLF.3"],"clusters":["CL.0159"],"distractors":[],"why":"Which form displays max for x≥0"}

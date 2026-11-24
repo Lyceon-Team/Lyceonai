@@ -1,0 +1,102 @@
+{"id": "b86123af", "sub_skills": ["SYS.4"], "clusters": ["CL.0052"], "distractors": [], "why": "Set up system of linear equations from word problem"}
+{"id": "608eeb6e", "sub_skills": ["SYS.1", "SYS.2"], "clusters": ["CL.0049", "CL.0051"], "distractors": [], "why": "Solve by substitution, find expression from system"}
+{"id": "b0fc3166", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "cdec4c87", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "dba8d38a", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "f5563c26", "sub_skills": ["SYS.4"], "clusters": ["CL.0052"], "distractors": [], "why": "Model situation with system of two linear equations"}
+{"id": "e6545fa8", "sub_skills": ["SYS.5"], "clusters": ["CL.0177"], "distractors": [], "why": "Read solution from graph of two lines"}
+{"id": "317e80f9", "sub_skills": ["SYS.3"], "clusters": ["CL.0053", "CL.0054"], "distractors": [], "why": "Determine solution count: same line vs parallel"}
+{"id": "aff28230", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "8abed0fb", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0052", "CL.0049"], "distractors": [], "why": "Model and solve system from word problem"}
+{"id": "e1259a5a", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "9db5b5c1", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0052", "CL.0050"], "distractors": [], "why": "Model and solve system by elimination"}
+{"id": "ca9bb527", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "f88970cc", "sub_skills": ["SYS.1"], "clusters": ["CL.0050"], "distractors": [], "why": "Solve system by elimination"}
+{"id": "ffb371f5", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "ece00725", "sub_skills": ["SYS.5"], "clusters": ["CL.0177"], "distractors": [], "why": "Read solution from graph of two lines"}
+{"id": "e0177f5f", "sub_skills": ["SYS.1"], "clusters": ["CL.0050"], "distractors": [], "why": "Solve system by elimination"}
+{"id": "ee031767", "sub_skills": ["SYS.3"], "clusters": ["CL.0053"], "distractors": [], "why": "Same line: infinitely many solutions"}
+{"id": "1006cad7", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "939fc21b", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "aacc834b", "sub_skills": ["SYS.1", "SYS.2"], "clusters": ["CL.0049", "CL.0051"], "distractors": [], "why": "Solve by substitution, find expression from system"}
+{"id": "cd33b015", "sub_skills": ["SYS.1"], "clusters": ["CL.0050"], "distractors": [], "why": "Solve system by elimination"}
+{"id": "4ec95eab", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "4fb8adf7", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0052", "CL.0049"], "distractors": [], "why": "Model and solve system from word problem"}
+{"id": "4b06557b", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "f6b055dc", "sub_skills": ["SYS.1"], "clusters": ["CL.0050"], "distractors": [], "why": "Solve system by elimination"}
+{"id": "0d1dca87", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "ccc3ad6b", "sub_skills": ["SYS.1"], "clusters": ["CL.0050"], "distractors": [], "why": "Solve system by elimination"}
+{"id": "cb8f449f", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "bf4a8b6a", "sub_skills": ["SYS.3"], "clusters": ["CL.0053"], "distractors": [], "why": "Same line: infinitely many solutions"}
+{"id": "e53688cb", "sub_skills": ["SYS.1", "SYS.2"], "clusters": ["CL.0050", "CL.0051"], "distractors": [], "why": "Solve by elimination, find expression from system"}
+{"id": "65833256", "sub_skills": ["SYS.1"], "clusters": ["CL.0049", "CL.0050"], "distractors": [], "why": "Solve system using both substitution and elimination"}
+{"id": "b544a348", "sub_skills": ["SYS.4"], "clusters": ["CL.0052"], "distractors": [], "why": "Set up system of linear equations from word problem"}
+{"id": "e3bbde69", "sub_skills": ["SYS.1", "SYS.2"], "clusters": ["CL.0049", "CL.0051"], "distractors": [], "why": "Solve by substitution, find expression from system"}
+{"id": "686b7cad", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "a94ed4e0", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "2704399f", "sub_skills": ["SYS.3"], "clusters": ["CL.0053"], "distractors": [], "why": "Same line: infinitely many solutions"}
+{"id": "55447be2", "sub_skills": ["SYS.4"], "clusters": ["CL.0052"], "distractors": [], "why": "Set up system of linear equations from word problem"}
+{"id": "5e422ff9", "sub_skills": ["SYS.1"], "clusters": ["CL.0050"], "distractors": [], "why": "Solve system by elimination"}
+{"id": "b3c7ca1d", "sub_skills": ["SYS.3"], "clusters": ["CL.0053"], "distractors": [], "why": "Same line: infinitely many solutions"}
+{"id": "e77a76ce", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0052", "CL.0050"], "distractors": [], "why": "Model and solve system by elimination"}
+{"id": "dcc4886a", "sub_skills": ["SYS.3"], "clusters": ["CL.0053"], "distractors": [], "why": "Same line: infinitely many solutions"}
+{"id": "4e400635", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "2875ba81", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "6e50ce28", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0052", "CL.0049"], "distractors": [], "why": "Model and solve system from word problem"}
+{"id": "9f6f96ff", "sub_skills": ["SYS.4"], "clusters": ["CL.0052"], "distractors": [], "why": "Set up system of linear equations from word problem"}
+{"id": "79784c23", "sub_skills": ["SYS.1", "SYS.2"], "clusters": ["CL.0050", "CL.0051"], "distractors": [], "why": "Solve by elimination, find expression from system"}
+{"id": "bd45df49", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0052", "CL.0049"], "distractors": [], "why": "Model and solve system from word problem"}
+{"id": "d909cd31", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "092ad67d", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "79be5180", "sub_skills": ["SYS.1", "SYS.2"], "clusters": ["CL.0049", "CL.0051"], "distractors": [], "why": "Solve by substitution, find expression from system"}
+{"id": "b00ad7f2", "sub_skills": ["SYS.5"], "clusters": ["CL.0177"], "distractors": [], "why": "Read solution from graph of two lines"}
+{"id": "c5082ce3", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0052", "CL.0049"], "distractors": [], "why": "Model and solve system from word problem"}
+{"id": "a0489274", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0052", "CL.0050"], "distractors": [], "why": "Model and solve system by elimination"}
+{"id": "19fdf387", "sub_skills": ["SYS.1"], "clusters": ["CL.0050"], "distractors": [], "why": "Solve system by elimination"}
+{"id": "6ba39da5", "sub_skills": ["SYS.3"], "clusters": ["CL.0053"], "distractors": [], "why": "Same line: infinitely many solutions"}
+{"id": "ed92fb68", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "9a216c0f", "sub_skills": ["SYS.1"], "clusters": ["CL.0050"], "distractors": [], "why": "Solve system by elimination"}
+{"id": "8a87c2c8", "sub_skills": ["SYS.1"], "clusters": ["CL.0050"], "distractors": [], "why": "Solve system by elimination"}
+{"id": "74c03c21", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "f5929f7a", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "6e6a3241", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "6a87902f", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "38a43902", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "0c541d87", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "71189542", "sub_skills": ["SYS.5", "SYS.3"], "clusters": ["CL.0177", "CL.0054"], "distractors": [], "why": "Graph shows parallel lines: no solution"}
+{"id": "73b3b7d8", "sub_skills": ["SYS.1", "SYS.2"], "clusters": ["CL.0050", "CL.0051"], "distractors": [], "why": "Solve by elimination, find expression from system"}
+{"id": "27f5fff3", "sub_skills": ["SYS.5"], "clusters": ["CL.0177"], "distractors": [], "why": "Read solution from graph of two lines"}
+{"id": "5e08a055", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "75012ee7", "sub_skills": ["SYS.3"], "clusters": ["CL.0053"], "distractors": [], "why": "Same line: infinitely many solutions"}
+{"id": "3a84f885", "sub_skills": ["SYS.1", "SYS.2"], "clusters": ["CL.0050", "CL.0051"], "distractors": [], "why": "Solve by elimination, find expression from system"}
+{"id": "567ac7ab", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "a71b1bc1", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0052", "CL.0049"], "distractors": [], "why": "Model and solve system from word problem"}
+{"id": "14360f84", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "59352689", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "fb5e7f59", "sub_skills": ["SYS.1"], "clusters": ["CL.0050"], "distractors": [], "why": "Solve system by elimination"}
+{"id": "1e11190a", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0052", "CL.0050"], "distractors": [], "why": "Model and solve system by elimination"}
+{"id": "1e0a46e4", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "f03465dc", "sub_skills": ["SYS.3"], "clusters": ["CL.0053"], "distractors": [], "why": "Same line: infinitely many solutions"}
+{"id": "e2e3942f", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "570b5a5d", "sub_skills": ["SYS.1", "SYS.2"], "clusters": ["CL.0050", "CL.0051"], "distractors": [], "why": "Solve by elimination, find expression from system"}
+{"id": "466b87e3", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "f718c9cf", "sub_skills": ["SYS.1", "SYS.2"], "clusters": ["CL.0050", "CL.0051"], "distractors": [], "why": "Solve by elimination, find expression from system"}
+{"id": "36fd6752", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "d7bf55e1", "sub_skills": ["SYS.4", "SYS.1", "SYS.2"], "clusters": ["CL.0052", "CL.0049", "CL.0051"], "distractors": [], "why": "Model, solve, and find expression from system"}
+{"id": "adb0c96c", "sub_skills": ["SYS.1"], "clusters": ["CL.0050"], "distractors": [], "why": "Solve system by elimination"}
+{"id": "45a534d0", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "7866a908", "sub_skills": ["SYS.4", "SYS.1", "SYS.2"], "clusters": ["CL.0052", "CL.0049", "CL.0051"], "distractors": [], "why": "Model, solve, and find expression from system"}
+{"id": "52cb8ea4", "sub_skills": ["SYS.2"], "clusters": ["CL.0050", "CL.0051"], "distractors": [], "why": "Find expression from system using elimination"}
+{"id": "1362ccde", "sub_skills": ["SYS.1", "SYS.2"], "clusters": ["CL.0049", "CL.0051"], "distractors": [], "why": "Solve by substitution, find expression from system"}
+{"id": "e1248a5c", "sub_skills": ["SYS.3"], "clusters": ["CL.0053"], "distractors": [], "why": "Same line: infinitely many solutions"}
+{"id": "70feb725", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0052", "CL.0049"], "distractors": [], "why": "Model and solve system from word problem"}
+{"id": "f75bd744", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "b5f62071", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "4f1342d6", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0052", "CL.0049"], "distractors": [], "why": "Model and solve system from word problem"}
+{"id": "797a81fb", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "979c6ebc", "sub_skills": ["SYS.3"], "clusters": ["CL.0053"], "distractors": [], "why": "Same line: infinitely many solutions"}
+{"id": "571174f3", "sub_skills": ["SYS.3"], "clusters": ["CL.0053"], "distractors": [], "why": "Same line: infinitely many solutions"}
+{"id": "1b1deebe", "sub_skills": ["SYS.1"], "clusters": ["CL.0049"], "distractors": [], "why": "Solve system by substitution"}
+{"id": "ff501705", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
+{"id": "d1b66ae6", "sub_skills": ["SYS.1"], "clusters": ["CL.0050"], "distractors": [], "why": "Solve system by elimination"}
+{"id": "4becad44", "sub_skills": ["SYS.3"], "clusters": ["CL.0054"], "distractors": [], "why": "Parallel lines: no solution"}
