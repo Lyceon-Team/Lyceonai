@@ -138,7 +138,7 @@ const post: ScheduledPostSpec = {
         blocks: [
           {
             type: "p",
-            text: "Each college sets its own application deadlines, so check its admissions website. Standard delivery can take up to 10 business days, which is two weeks on the calendar. Order well before a deadline, and keep rush delivery for when time is short.",
+            text: "Each college sets its own application deadlines, so check its admissions website. Standard reports are usually sent within 10 business days of your order. Weekends and holidays don't count, so that can run past two weeks on the calendar, and each college then takes its own time to process what arrives. Order well before a deadline, and keep rush delivery for when time is short.",
             sources: [CB_SAT_STUDENT_GUIDE, CB_SENDING_WEEKEND_SCORES],
           },
           {
