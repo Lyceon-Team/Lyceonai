@@ -198,7 +198,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     idempotency:
       "event id insert-once; upsert on profile_id; refund keyed on subscription id with a body constant across the retry (Errors.d.ts:252-253) + charge.amount_refunded pre-check",
     gateTest: "tests/ci/stripe-country-denial-remediation.contract.test.ts",
-    callSite: `${WH}:2816`,
+    callSite: `${WH}:2821`,
     callSiteExpect:
       "await fulfilCheckoutSession(session, event.type, event.id)",
   }),
@@ -230,7 +230,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     idempotency:
       "event id insert-once; upsert on profile_id; refund keyed on subscription id with a body constant across the retry (Errors.d.ts:252-253) + charge.amount_refunded pre-check",
     gateTest: "tests/ci/stripe-country-denial-remediation.contract.test.ts",
-    callSite: `${WH}:2816`,
+    callSite: `${WH}:2821`,
     callSiteExpect:
       "await fulfilCheckoutSession(session, event.type, event.id)",
   }),
@@ -243,7 +243,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
       "none — SCL-071: grants nothing, and is NOT a revocation of something never granted",
     idempotency: "event id insert-once",
     gateTest: "tests/ci/stripe-settlement.contract.test.ts",
-    callSite: `${WH}:2824`,
+    callSite: `${WH}:2829`,
     callSiteExpect: 'event.type === "checkout.session.async_payment_failed"',
   }),
   definePath({
@@ -261,7 +261,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "writeEntitlementsForAllItems | writeEntitlementFromSubscription",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-lifecycle-gate.contract.test.ts",
-    callSite: `${WH}:2963`,
+    callSite: `${WH}:2968`,
     callSiteExpect: "await writeEntitlementFromSubscription(",
   }),
   definePath({
@@ -279,7 +279,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "writeEntitlementsForAllItems | writeEntitlementFromSubscription",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-lifecycle-gate.contract.test.ts",
-    callSite: `${WH}:2963`,
+    callSite: `${WH}:2968`,
     callSiteExpect: "await writeEntitlementFromSubscription(",
   }),
   definePath({
@@ -290,7 +290,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "writeEntitlementFromSubscription (tier=free)",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-lifecycle-gate.contract.test.ts",
-    callSite: `${WH}:2963`,
+    callSite: `${WH}:2968`,
     callSiteExpect: "await writeEntitlementFromSubscription(",
   }),
   definePath({
@@ -303,7 +303,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
       "The revoke arrives later through customer.subscription.updated/deleted",
     idempotency: "event id insert-once; cancel_at_period_end is idempotent",
     gateTest: "tests/ci/stripe-lifecycle-gate.contract.test.ts",
-    callSite: `${WH}:2709`,
+    callSite: `${WH}:2714`,
     callSiteExpect: "await handleCustomerUpdated(event)",
   }),
   definePath({
@@ -314,7 +314,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "handleCustomerDeleted -> revokeAllProfiles (tier=free)",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-customer-deleted.contract.test.ts",
-    callSite: `${WH}:2704`,
+    callSite: `${WH}:2709`,
     callSiteExpect: "await handleCustomerDeleted(event)",
   }),
   definePath({
@@ -331,7 +331,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "revokeAllProfiles (pause_collection first, SCL-073)",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-dispute.contract.test.ts",
-    callSite: `${WH}:2719`,
+    callSite: `${WH}:2724`,
     callSiteExpect: "await handleDisputeCreated(event)",
   }),
   definePath({
@@ -350,7 +350,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "rederiveEntitlementsForSubscription (resume first, SCL-073)",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-lifecycle-gate.contract.test.ts",
-    callSite: `${WH}:2724`,
+    callSite: `${WH}:2729`,
     callSiteExpect: "await handleDisputeClosed(event)",
   }),
   definePath({
@@ -367,7 +367,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "revokeAllProfiles (pause_collection first, SCL-048/072)",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-refund.contract.test.ts",
-    callSite: `${WH}:2714`,
+    callSite: `${WH}:2719`,
     callSiteExpect: "await handleRefundUpdated(event)",
   }),
 
@@ -391,7 +391,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
       "still arrives through customer.subscription.updated (§4.5)",
     idempotency: "event id insert-once; clearing an empty deadline is a no-op",
     gateTest: "tests/ci/billing-lapse.pg.ci.test.ts",
-    callSite: `${WH}:2699`,
+    callSite: `${WH}:2704`,
     callSiteExpect: "await handleInvoicePaymentSucceeded(",
   }),
   definePath({
@@ -407,7 +407,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
       "event id insert-once; deadline set only when NULL; one email per " +
       "invoice and attempt (billing_lapse_notices)",
     gateTest: "tests/ci/billing-lapse.pg.ci.test.ts",
-    callSite: `${WH}:2691`,
+    callSite: `${WH}:2696`,
     callSiteExpect: "await handleInvoicePaymentFailed(",
   }),
   definePath({

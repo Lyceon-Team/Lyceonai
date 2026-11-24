@@ -26247,7 +26247,7 @@ CREATE TRIGGER entitlement_runtime_config_notify AFTER INSERT OR UPDATE ON publi
 -- Name: entitlements entitlements_sync_tutor_conversations; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER entitlements_sync_tutor_conversations AFTER INSERT OR UPDATE OF status ON public.entitlements FOR EACH ROW EXECUTE FUNCTION public.sync_tutor_conversations_on_entitlement_change();
+CREATE TRIGGER entitlements_sync_tutor_conversations AFTER INSERT OR UPDATE OF status, grace_period_ends_at ON public.entitlements FOR EACH ROW EXECUTE FUNCTION public.sync_tutor_conversations_on_entitlement_change();
 
 
 --

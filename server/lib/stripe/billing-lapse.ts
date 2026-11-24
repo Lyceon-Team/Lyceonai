@@ -73,6 +73,8 @@ export type LapseSubscription = {
   id: string;
   status: string;
   cancelAtPeriodEnd: boolean;
+  /** A scheduled cancel (a past_due self-cancel sets one, SCL-271), epoch seconds, or null. */
+  cancelAt: number | null;
   /** A card (or other method) Stripe would charge: on the subscription or the customer. */
   hasDefaultPaymentMethod: boolean;
   /** When the next invoice is made: the earliest item period end, epoch seconds. */
@@ -112,6 +114,7 @@ const stripeSubscriptionSchema = z.object({
   id: z.string().min(1),
   status: z.string().min(1),
   cancel_at_period_end: z.boolean().nullish(),
+  cancel_at: z.number().nullish(),
   default_payment_method: paymentMethodRef,
   default_source: paymentMethodRef,
   customer: z.union([
@@ -161,6 +164,7 @@ export function toLapseSubscription(raw: unknown): LapseSubscription {
     id: s.id,
     status: s.status,
     cancelAtPeriodEnd: s.cancel_at_period_end === true,
+    cancelAt: s.cancel_at ?? null,
     hasDefaultPaymentMethod,
     nextInvoiceAt: ends.length > 0 ? Math.min(...ends) : null,
   };
@@ -271,7 +275,11 @@ async function setGraceIfEmpty(
     .from("entitlements")
     .update({ grace_period_ends_at: deadline.toISOString() })
     .eq("stripe_subscription_id", subscriptionId)
-    .is("grace_period_ends_at", null);
+    .is("grace_period_ends_at", null)
+    // Only a row Stripe already reports past_due. A late or redelivered failure for an invoice
+    // since paid must not leave a deadline on an active row that a later lapse would inherit.
+    // A failure that arrives before its past_due write is caught by the job (step 2).
+    .eq("status", "past_due");
   if (error) {
     throw new Error(`billing lapse: grace write failed: ${error.message}`);
   }
@@ -281,6 +289,43 @@ async function setGraceIfEmpty(
     .filter((v): v is string => v !== null)
     .sort();
   return set[0] ?? null;
+}
+
+/**
+ * The deadline has passed: `entitlement_active` is already false for these rows, with no write.
+ * The tutor-severance trigger (`entitlements_sync_tutor_conversations`) fires on writes of
+ * `status` or `grace_period_ends_at` (migration 20261211000000), so this rewrites the deadline to
+ * itself on each expired row: the trigger then reads the predicate, finds it false and stamps
+ * `tutor_conversations.deleted_at` (first lapse wins, so a rerun moves nothing). One stamping
+ * path, the trigger's, whatever happens to the Stripe cancel after it.
+ */
+async function touchExpiredDeadline(
+  subscriptionId: string,
+  now: Date,
+): Promise<void> {
+  const { data, error } = await supabaseServer
+    .from("entitlements")
+    .select("profile_id, grace_period_ends_at")
+    .eq("stripe_subscription_id", subscriptionId)
+    .eq("status", "past_due")
+    .lte("grace_period_ends_at", now.toISOString());
+  if (error) {
+    throw new Error(`billing lapse: expired read failed: ${error.message}`);
+  }
+  for (const row of (data ?? []) as {
+    profile_id: string;
+    grace_period_ends_at: string;
+  }[]) {
+    const { error: writeError } = await supabaseServer
+      .from("entitlements")
+      .update({ grace_period_ends_at: row.grace_period_ends_at })
+      .eq("profile_id", row.profile_id);
+    if (writeError) {
+      throw new Error(
+        `billing lapse: expired touch failed: ${writeError.message}`,
+      );
+    }
+  }
 }
 
 export async function clearGrace(subscriptionId: string): Promise<void> {
@@ -356,6 +401,32 @@ async function settle(
 }
 
 const isoDay = (d: Date): string => d.toISOString().slice(0, 10);
+
+/**
+ * Claim, build the payload, send, settle. A throw anywhere after the claim (the link's role read,
+ * the payload parse, the send itself) releases the claim and rethrows, so the email is retried on
+ * the next run or redelivery instead of being recorded as sent when it never went.
+ */
+async function sendOnce(
+  subscriptionId: string,
+  notice: BillingLapseNotice,
+  ref: string,
+  payer: string,
+  event: string,
+  build: () => Promise<Record<string, string>>,
+  deps: BillingLapseDeps,
+): Promise<BillingEventOutcome | "already_sent"> {
+  if (!(await claim(subscriptionId, notice, ref))) return "already_sent";
+  let outcome: BillingEventOutcome;
+  try {
+    outcome = await deps.send(payer, event, await build());
+  } catch (err) {
+    await settle(subscriptionId, notice, ref, { kind: "failed" }, deps.now());
+    throw err;
+  }
+  await settle(subscriptionId, notice, ref, outcome, deps.now());
+  return outcome;
+}
 
 /** Whole UTC days from `now` to `at`: the date difference, not a 24-hour count. */
 export function daysUntil(atEpochSeconds: number, now: Date): number {
@@ -449,18 +520,25 @@ export async function handleInvoicePaymentFailed(
   if (attempt < 1 || attempt > 3) return "beyond_third_attempt";
   if (!deps.siteUrl) return "no_site_url";
 
-  const notice = `payment_failed_${attempt}` as BillingLapseNotice;
-  if (!(await claim(subscriptionId, notice, invoice.id))) return "already_sent";
-  const payload = billingPaymentFailedPayloadSchema.parse({
-    attempt: String(attempt),
-    grace_ends_on: inForce.slice(0, 10),
-    amount: formatAmount(invoice.amountDue, invoice.currency),
-    currency: invoice.currency.toLowerCase(),
-    add_card_url: await addCardUrl(deps.siteUrl, payer),
-    invoice_url: invoice.hostedInvoiceUrl ?? "",
-  });
-  const outcome = await deps.send(payer, BILLING_PAYMENT_FAILED_EVENT, payload);
-  await settle(subscriptionId, notice, invoice.id, outcome, now);
+  const siteUrl = deps.siteUrl;
+  const outcome = await sendOnce(
+    subscriptionId,
+    `payment_failed_${attempt}` as BillingLapseNotice,
+    invoice.id,
+    payer,
+    BILLING_PAYMENT_FAILED_EVENT,
+    async () =>
+      billingPaymentFailedPayloadSchema.parse({
+        attempt: String(attempt),
+        grace_ends_on: inForce.slice(0, 10),
+        amount: formatAmount(invoice.amountDue, invoice.currency),
+        currency: invoice.currency.toLowerCase(),
+        add_card_url: await addCardUrl(siteUrl, payer),
+        invoice_url: invoice.hostedInvoiceUrl ?? "",
+      }),
+    deps,
+  );
+  if (outcome === "already_sent") return "already_sent";
   logger.info(COMPONENT, "payment_failed", "Payment failure handled", {
     subscriptionRef: digestId(subscriptionId),
     attempt,
@@ -522,22 +600,19 @@ async function fireAccessEnded(
   const rows = await rowsForSubscription(subscriptionId);
   const payer = payerOf(rows);
   if (!payer) return "unknown_subscription";
-  if (!(await claim(subscriptionId, "access_ended", subscriptionId))) {
-    return "already_sent";
-  }
-  const payload = billingAccessEndedPayloadSchema.parse({
-    ended_on: isoDay(endedAt),
-    reason: "payment_failed",
-  });
-  const outcome = await deps.send(payer, BILLING_ACCESS_ENDED_EVENT, payload);
-  await settle(
+  return sendOnce(
     subscriptionId,
     "access_ended",
     subscriptionId,
-    outcome,
-    deps.now(),
+    payer,
+    BILLING_ACCESS_ENDED_EVENT,
+    async () =>
+      billingAccessEndedPayloadSchema.parse({
+        ended_on: isoDay(endedAt),
+        reason: "payment_failed",
+      }),
+    deps,
   );
-  return outcome;
 }
 
 // ── The daily job ──────────────────────────────────────────────────────────────────────────
@@ -558,6 +633,7 @@ export type BillingLapseJobSummary = {
   };
   graceBackfilled: number;
   deadlineCancelled: number;
+  deadlineSelfCancelSkipped: number;
   accessEnded: { sent: number; skippedUnder13: number; failed: number };
   errors: number;
 };
@@ -610,6 +686,7 @@ export async function runBillingLapseJob(
     },
     graceBackfilled: 0,
     deadlineCancelled: 0,
+    deadlineSelfCancelSkipped: 0,
     accessEnded: { sent: 0, skippedUnder13: 0, failed: 0 },
     errors: 0,
   };
@@ -679,24 +756,27 @@ export async function runBillingLapseJob(
         continue;
       }
       const invoiceDate = isoDay(new Date(sub.nextInvoiceAt * 1000));
-      const notice = `card_needed_${milestone}` as BillingLapseNotice;
-      if (!(await claim(subscriptionId, notice, invoiceDate))) {
+      const siteUrl = deps.siteUrl;
+      const outcome = await sendOnce(
+        subscriptionId,
+        `card_needed_${milestone}` as BillingLapseNotice,
+        invoiceDate,
+        payer,
+        BILLING_CARD_NEEDED_EVENT,
+        async () =>
+          billingCardNeededPayloadSchema.parse({
+            days_left: String(daysLeft),
+            invoice_date: invoiceDate,
+            amount: formatAmount(preview.amountDue, preview.currency),
+            currency: preview.currency.toLowerCase(),
+            add_card_url: await addCardUrl(siteUrl, payer),
+          }),
+        deps,
+      );
+      if (outcome === "already_sent") {
         summary.cardNeeded.alreadySent += 1;
         continue;
       }
-      const payload = billingCardNeededPayloadSchema.parse({
-        days_left: String(daysLeft),
-        invoice_date: invoiceDate,
-        amount: formatAmount(preview.amountDue, preview.currency),
-        currency: preview.currency.toLowerCase(),
-        add_card_url: await addCardUrl(deps.siteUrl, payer),
-      });
-      const outcome = await deps.send(
-        payer,
-        BILLING_CARD_NEEDED_EVENT,
-        payload,
-      );
-      await settle(subscriptionId, notice, invoiceDate, outcome, now);
       if (outcome.kind === "sent") summary.cardNeeded.sent += 1;
       else if (outcome.kind === "failed") {
         summary.cardNeeded.failed += 1;
@@ -744,7 +824,17 @@ export async function runBillingLapseJob(
   );
   for (const subscriptionId of expired) {
     try {
+      // Access ended at the deadline; make the tutor record follow now, before anything that can
+      // fail (the Stripe cancel). See `touchExpiredDeadline`.
+      await touchExpiredDeadline(subscriptionId, now);
       const sub = await deps.stripe.retrieveSubscription(subscriptionId);
+      // A member who chose to cancel (SCL-271 schedules a past_due self-cancel with `cancel_at`)
+      // is not a payment lapse: no Lyceon cancel and no access-ended email (ruling 5). Stripe ends
+      // it at the moment it was scheduled for.
+      if (sub.cancelAt !== null || sub.cancelAtPeriodEnd) {
+        summary.deadlineSelfCancelSkipped += 1;
+        continue;
+      }
       if (sub.status !== "canceled") {
         await deps.stripe.cancelSubscription(subscriptionId);
         summary.deadlineCancelled += 1;

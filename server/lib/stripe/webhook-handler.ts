@@ -2674,10 +2674,15 @@ async function dispatch(event: Stripe.Event): Promise<DispatchStatus> {
    * says canceled; a self-cancel reaches here too and is left alone by the handler.
    */
   if (event.type === "customer.subscription.deleted") {
-    await handleSubscriptionDeletedForLapse(
+    const lapse = await handleSubscriptionDeletedForLapse(
       event.data.object,
       defaultBillingLapseDeps,
     );
+    // A refused send has released its claim; throwing makes Stripe redeliver, so it is retried.
+    // The canceled row is never revisited by the daily job, so this is the only retry it gets.
+    if (typeof lapse !== "string" && lapse.kind === "failed") {
+      throw new Error("billing lapse: access_ended event was not accepted");
+    }
   }
   return status;
 }

@@ -59,6 +59,7 @@ type FakeSub = {
   id: string;
   status: string;
   cancel_at_period_end: boolean;
+  cancel_at: number | null;
   default_payment_method: string | null;
   customer: {
     invoice_settings: { default_payment_method: string | null };
@@ -162,6 +163,7 @@ describe.skipIf(!PG_AVAILABLE)("billing lapse → real PG", () => {
       id: sub,
       status: opts.status ?? "active",
       cancel_at_period_end: opts.cancelAtPeriodEnd === true,
+      cancel_at: null,
       default_payment_method: null,
       customer: {
         invoice_settings: { default_payment_method: null },
@@ -481,6 +483,108 @@ describe.skipIf(!PG_AVAILABLE)("billing lapse → real PG", () => {
         [m.id],
       );
       expect(profile.rows).toHaveLength(1);
+    });
+  });
+
+  describe("review fixes", () => {
+    it("a past_due self-cancel (scheduled cancel_at) is left to Stripe at the deadline: no Lyceon cancel, no access_ended", async () => {
+      const m = await member({
+        status: "past_due",
+        grace: new Date(Date.now() - 60_000),
+      });
+      const s = subs.get(m.sub)!;
+      s.status = "past_due";
+      s.cancel_at = Math.floor(Date.now() / 1000) + 3600;
+      const summary = await lapse.runBillingLapseJob(deps(new Date()));
+      expect(cancelled).not.toContain(m.sub);
+      expect(eventsFor(m.email, "lyceon.billing_access_ended")).toEqual([]);
+      expect(summary.deadlineSelfCancelSkipped).toBeGreaterThanOrEqual(1);
+    });
+
+    it("a throw after the claim releases it, so the email is retried rather than lost", async () => {
+      const m = await member({ status: "past_due" });
+      const invoice = lapse.toLapseInvoice(
+        failedInvoice(m.sub, 1, `in_throw_${m.sub}`),
+      );
+      const throwing = {
+        ...deps(new Date()),
+        send: async (): Promise<never> => {
+          throw new Error("transport exploded");
+        },
+      };
+      await expect(
+        lapse.handleInvoicePaymentFailed(invoice, throwing),
+      ).rejects.toThrow("transport exploded");
+      const held = await pg.query(
+        `SELECT count(*)::int AS n FROM public.billing_lapse_notices WHERE stripe_subscription_id = $1`,
+        [m.sub],
+      );
+      expect(held.rows[0].n).toBe(0);
+      expect(
+        await lapse.handleInvoicePaymentFailed(invoice, deps(new Date())),
+      ).toBe("sent");
+    });
+
+    it("a late failure for a subscription that is active again sets no deadline", async () => {
+      const m = await member({ status: "active" });
+      await lapse.handleInvoicePaymentFailed(
+        lapse.toLapseInvoice(failedInvoice(m.sub, 1, `in_late_${m.sub}`)),
+        deps(new Date()),
+      );
+      expect(await grace(m.sub)).toBeNull();
+    });
+
+    it("an expired deadline stamps the tutor conversations even if the Stripe cancel fails; paying restores them", async () => {
+      const m = await member({
+        status: "past_due",
+        grace: new Date(Date.now() + DAY),
+      });
+      subs.get(m.sub)!.status = "past_due";
+      const convo = `c0a5e000-0000-4000-8000-${String(seq).padStart(12, "0")}`;
+      await pg.query(
+        `INSERT INTO public.tutor_conversations (id, student_id, entry_mode, source_surface, status)
+         VALUES ($1, $2, 'general', 'dashboard', 'active')`,
+        [convo, m.id],
+      );
+      const stamp = async (): Promise<Date | null> =>
+        (
+          await pg.query<{ d: Date | null }>(
+            `SELECT deleted_at AS d FROM public.tutor_conversations WHERE id = $1`,
+            [convo],
+          )
+        ).rows[0]!.d;
+      expect(await stamp()).toBeNull();
+      // The deadline passes (no write), and the Stripe cancel fails.
+      await pg.query(
+        `UPDATE public.entitlements SET grace_period_ends_at = now() - interval '1 minute'
+          WHERE stripe_subscription_id = $1`,
+        [m.sub],
+      );
+      await pg.query(
+        `UPDATE public.tutor_conversations SET deleted_at = NULL WHERE id = $1`,
+        [convo],
+      );
+      const failing = {
+        ...deps(new Date()),
+        stripe: {
+          ...stripe,
+          cancelSubscription: async (): Promise<never> => {
+            throw new Error("stripe down");
+          },
+        },
+      };
+      const summary = await lapse.runBillingLapseJob(failing);
+      expect(summary.ok).toBe(false);
+      expect(await stamp()).not.toBeNull();
+      // Paid: the deadline is cleared, and the trigger restores the history.
+      await lapse.handleInvoicePaymentSucceeded(
+        lapse.toLapseInvoice(failedInvoice(m.sub, 1, `in_paid_${m.sub}`)),
+      );
+      await pg.query(
+        `UPDATE public.entitlements SET status = 'active' WHERE stripe_subscription_id = $1`,
+        [m.sub],
+      );
+      expect(await stamp()).toBeNull();
     });
   });
 

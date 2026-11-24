@@ -54,12 +54,14 @@
  * It matches the default Doc-01_V8 §21 `:954` and §23 `:1015` both name as
  * `entitlement_runtime_config.grace_period_days_past_due`. It is a constant here
  * and NOT a config read, deliberately and by the same ruling: that config key
- * exists in no migration and no TypeScript, `entitlements.grace_period_ends_at`
- * has no writer, and `entitlement_active` enforces no deadline at all — so Doc
- * 01's grace model is unimplemented, and reading a key that is not there would
- * fail closed on every cancellation. Implementing the general grace model is
- * explicitly out of scope for this change and is tracked separately; this
- * constant is the whole of the grace behaviour here.
+ * exists in no migration and no TypeScript, and reading a key that is not there
+ * would fail closed on every cancellation.
+ *
+ * The general grace model this left out is now built (SCL-289, owner brief
+ * "Founding lapse flow", Karl 2026-11-24): `entitlements.grace_period_ends_at` is
+ * written by server/lib/stripe/billing-lapse.ts (first failed payment, now + this
+ * constant) and `entitlement_active` honours it (migration 20261211000000). This
+ * constant is still the one definition of the 7, for both paths.
  */
 export const PAST_DUE_GRACE_DAYS = 7;
 

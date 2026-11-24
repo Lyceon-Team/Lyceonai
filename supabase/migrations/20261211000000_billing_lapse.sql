@@ -28,6 +28,10 @@
 --     SELECT EXISTS (SELECT 1 FROM public.entitlements e
 --      WHERE e.profile_id = p_profile_id AND e.status IN ('active','past_due','trialing'));
 --   $$;
+--   DROP TRIGGER IF EXISTS entitlements_sync_tutor_conversations ON public.entitlements;
+--   CREATE TRIGGER entitlements_sync_tutor_conversations
+--     AFTER INSERT OR UPDATE OF status ON public.entitlements
+--     FOR EACH ROW EXECUTE FUNCTION public.sync_tutor_conversations_on_entitlement_change();
 --   DROP TABLE IF EXISTS public.billing_lapse_notices;
 --   -- grace_period_ends_at values written meanwhile are harmless once the old body is back.
 -- ============================================================================
@@ -53,7 +57,21 @@ $$;
 REVOKE ALL ON FUNCTION public.entitlement_active(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.entitlement_active(uuid) TO service_role;
 
--- 2. The once-only ledger for the lapse emails.
+-- 2. The tutor-severance trigger follows the predicate's new input.
+--    20260922010000 fires `sync_tutor_conversations_on_entitlement_change` on `UPDATE OF status`
+--    because the predicate read `status` and nothing else, and says THE COLUMN LIST IS COUPLED TO
+--    THE PREDICATE'S BODY. The predicate now also reads `grace_period_ends_at`, so the trigger
+--    fires on it too: clearing the deadline (paid) restores the tutor history at once. The
+--    deadline PASSING is not a write, so the daily billing-lapse job rewrites each expired
+--    deadline to itself (`touchExpiredDeadline`), and this trigger stamps the conversations then.
+--    Test C1.7 (tests/ci/tutor-lapse-severance.pg.ci.test.ts) asserts the pair.
+DROP TRIGGER IF EXISTS entitlements_sync_tutor_conversations ON public.entitlements;
+CREATE TRIGGER entitlements_sync_tutor_conversations
+  AFTER INSERT OR UPDATE OF status, grace_period_ends_at ON public.entitlements
+  FOR EACH ROW
+  EXECUTE FUNCTION public.sync_tutor_conversations_on_entitlement_change();
+
+-- 3. The once-only ledger for the lapse emails.
 CREATE TABLE public.billing_lapse_notices (
   stripe_subscription_id text        NOT NULL,
   notice                 text        NOT NULL CHECK (notice IN (

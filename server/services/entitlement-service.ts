@@ -17,7 +17,8 @@
  * active/inactive decision.
  *
  * expected outcome: `isEntitlementActiveForProfile(profileId)` returns the canonical
- * grace-inclusive verdict (active OR past_due) for the given profile id (= the user's
+ * grace-inclusive verdict (active, trialing, or past_due until its grace deadline,
+ * SCL-289) for the given profile id (= the user's
  * auth id; entitlements are student-scoped and keyed by profiles.id per genesis §20–24).
  *
  * trade-offs / edge cases:
@@ -43,10 +44,9 @@ export type EntitlementActiveResult = {
 export class EntitlementService {
   /**
    * Returns true iff the profile has a canonical active entitlement
-   * (status IN ('active','past_due','trialing') — grace-inclusive per owner
-   * ruling 2026-06-14, widened to include `trialing` by SCL-029 and verified
-   * against the live `entitlement_active` function body on 2026-09-02; this
-   * docstring previously omitted `trialing` and was wrong).
+   * (status IN ('active','trialing'), or 'past_due' until `grace_period_ends_at`
+   * — grace-inclusive per owner ruling 2026-06-14, widened to include `trialing`
+   * by SCL-029, given Doc 01 §21's deadline by SCL-289 (migration 20261211000000)).
    * Fails closed (false) on any RPC error.
    */
   static async isEntitlementActiveForProfile(
