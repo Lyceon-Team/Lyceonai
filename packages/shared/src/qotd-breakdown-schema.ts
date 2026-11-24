@@ -39,7 +39,7 @@ import {
 } from "./qotd-schema";
 import { masterySectionSchema } from "./mastery-levels";
 import {
-  workedExamplePostSchema,
+  workedExampleMergeApprovalSchema,
   workedExampleQuestionIdSchema,
   workedExampleScriptSchema,
 } from "./worked-example-schema";
@@ -215,7 +215,7 @@ export const qotdBreakdownManifestSchema = z
         question_id: workedExampleQuestionIdSchema,
         duration_seconds: z.number().min(30).max(60),
         /** Karl's merge of the script, from GitHub's record (the worked examples' approval). */
-        approval: workedExamplePostSchema.innerType().shape.approval,
+        approval: workedExampleMergeApprovalSchema,
       })
       .strict(),
     z

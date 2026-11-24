@@ -105,7 +105,7 @@ import {
 } from "../../shared/slack/client";
 import {
   approvalFromRecord,
-  type ExampleApproval,
+  type MergeApproval,
 } from "../worked-examples/approval";
 import { buildScriptComposition } from "../worked-examples/composition";
 import { videoFileProblems, type ProbeResult } from "../worked-examples/daily";
@@ -222,7 +222,7 @@ export type ScriptSource = {
   approve: (
     dir: string,
   ) => Promise<
-    { ok: true; approval: ExampleApproval } | { ok: false; reason: string }
+    { ok: true; approval: MergeApproval } | { ok: false; reason: string }
   >;
 };
 

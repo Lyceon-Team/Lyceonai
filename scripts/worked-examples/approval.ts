@@ -17,24 +17,94 @@
  * in content/batches/approvals.json, because a week's blog batch and its worked-example batch
  * share a cycle name and a cycle keeps its first stamp.
  *
+ * FROM 2026-11-24 (Karl's ruling "Worked examples: drop the merge gate", SCL-288): a scheduled
+ * Claude task writes next week's examples on Thursday morning and pushes them straight to `social`
+ * with the trailer `Authored-By: worked-examples-task`. An example whose folder commit carries that
+ * trailer is approved by the task (approvalFromTrailer), recorded as "worked-examples-task" with
+ * the commit and its date; Karl reviews when he posts from Slack. Karl's merge still approves
+ * (approvalFromRecord). Either way the weekly job then runs every pull-request check on the example
+ * and writes its approved row, whose database trigger is the anti-leak half (weekly-admit.ts).
+ * This supersedes Doc 10B principle 4 ("Karl's approval is a merge of the batch pull request") for
+ * worked examples, by the owner's ruling recorded in SCL-288; folding it into Doc 10B is Karl's.
+ *
  * dueExamples is the day's selection: post_on is today (America/Chicago), not retired, not already
  * in the posted ledger. Approval is checked after it, per example, and an unapproved example is
  * never rendered.
  */
 import {
+  WORKED_EXAMPLES_TASK,
   workedExampleId,
+  type WorkedExampleApproval,
   type WorkedExampleContent,
+  type WorkedExampleMergeApproval,
   type WorkedExamplePostedLedger,
+  type WorkedExampleTaskApproval,
 } from "../../packages/shared/src/worked-example-schema";
 import { CONTENT_BRANCH } from "../../shared/content/approvals";
 import { mergeEventFromPull } from "../content/stamp-approval";
 
-export type ExampleApproval = {
-  pr: number;
-  mergedBy: string;
-  mergeSha: string;
-  mergedAt: string;
+/** Karl's merge (the QOTD breakdowns' only kind of approval). */
+export type MergeApproval = WorkedExampleMergeApproval;
+/** Either kind: Karl's merge, or the scheduled task's trailer commit (SCL-288). */
+export type ExampleApproval = WorkedExampleApproval;
+
+/** The trailer key and the one value that approves (Karl, 2026-11-24). */
+export const AUTHORED_BY_TRAILER = "Authored-By";
+
+/** What the approval reads of the commit that last changed an example's folder on `social`. */
+export type FolderCommitRecord = {
+  sha: string;
+  /** The commit date, ISO 8601. */
+  committedAt: string;
+  /** Every `Authored-By:` trailer value on the commit message. */
+  authoredBy: readonly string[];
 };
+
+/**
+ * The scheduled task's approval: the folder commit carries `Authored-By: worked-examples-task`.
+ * Any other value, or none, approves nothing here (the merge path may still approve).
+ */
+export function approvalFromTrailer(
+  commit: FolderCommitRecord,
+):
+  | { ok: true; approval: WorkedExampleTaskApproval }
+  | { ok: false; reason: string } {
+  if (!commit.authoredBy.includes(WORKED_EXAMPLES_TASK))
+    return {
+      ok: false,
+      reason: `${commit.sha.slice(0, 7)} carries no "${AUTHORED_BY_TRAILER}: ${WORKED_EXAMPLES_TASK}" trailer`,
+    };
+  return {
+    ok: true,
+    approval: {
+      by: WORKED_EXAMPLES_TASK,
+      sha: commit.sha,
+      at: commit.committedAt,
+    },
+  };
+}
+
+/**
+ * The approval of an example from its folder commit: the task's trailer, else Karl's merge read
+ * from GitHub's record (`pullFor` is only asked when there is no trailer). Refused when neither.
+ */
+export async function approvalForCommit(
+  commit: FolderCommitRecord,
+  pullFor: (sha: string) => Promise<unknown>,
+  approverLogin: string | undefined,
+): Promise<
+  { ok: true; approval: ExampleApproval } | { ok: false; reason: string }
+> {
+  const task = approvalFromTrailer(commit);
+  if (task.ok) return task;
+  const merge = approvalFromRecord(
+    await pullFor(commit.sha),
+    commit.sha,
+    approverLogin,
+  );
+  if (merge.ok) return merge;
+  return { ok: false, reason: `${task.reason}, and ${merge.reason}` };
+}
 
 /**
  * The approval of an example whose folder was last changed by `folderCommit` on `social`, from
@@ -47,7 +117,7 @@ export function approvalFromRecord(
   folderCommit: string,
   approverLogin: string | undefined,
   branch: string = CONTENT_BRANCH,
-): { ok: true; approval: ExampleApproval } | { ok: false; reason: string } {
+): { ok: true; approval: MergeApproval } | { ok: false; reason: string } {
   if (!approverLogin)
     return { ok: false, reason: "CONTENT_APPROVER_LOGIN is not set" };
   if (pull === null)

@@ -11,10 +11,18 @@
  * fails the checks stores nothing. The week helpers, the captions file and the announcement run on
  * the real fixture example and the real caption builders.
  */
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { isoWeekCycle } from "../../shared/content/schedule";
 import { postMessage, type FetchLike } from "../../shared/slack/client";
 import { copyBlockProblems } from "../../shared/social/posts";
@@ -61,6 +69,21 @@ import {
   YOUTUBE_SHORTS_FROM,
   youtubeProblems,
 } from "../../shared/worked-examples/rules";
+
+import { approvalForCommit } from "../../scripts/worked-examples/approval";
+import { checkContent } from "../../scripts/worked-examples/check-content";
+import { folderCommitRecord } from "../../scripts/worked-examples/github";
+import {
+  seedRow,
+  seedRowValues,
+  type WorkedExampleRow,
+} from "../../scripts/worked-examples/seed-sql";
+import {
+  admitExample,
+  checkProblemsFor,
+  type AdmitDeps,
+} from "../../scripts/worked-examples/weekly-admit";
+import { workedExampleApprovalSchema } from "../../packages/shared/src/worked-example-schema";
 
 const ROOT = join(__dirname, "../..");
 const CONTENT = join(ROOT, "tests/fixtures/worked-examples/social");
@@ -697,5 +720,335 @@ describe("YouTube Shorts block from W48 (Karl, 2026-11-14)", () => {
     expect(file).not.toContain("&amp;");
     // A W47 post's reply is unchanged: four blocks, no YouTube.
     expect(captionsMarkdown(postOn("2026-11-16"))).not.toContain("YouTube");
+  });
+});
+
+/** Every temp folder the SCL-288 tests make, removed after them (a mutation run repeats them ~80 times). */
+const scratch: string[] = [];
+function tempDir(prefix: string): string {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  scratch.push(d);
+  return d;
+}
+afterAll(() => {
+  for (const d of scratch) rmSync(d, { recursive: true, force: true });
+});
+
+/**
+ * The merge gate dropped (Karl, 2026-11-24, SCL-288): the scheduled task's trailer approves; the
+ * weekly job runs every pull-request check and writes the approved row before building.
+ */
+describe("approval by the scheduled task's trailer (Karl, 2026-11-24, SCL-288)", () => {
+  /**
+   * A real git commit in a fresh repo: the trailer is read by git, not by a regex of ours.
+   *
+   * git, run inside that temporary repo, looks for the repo's own ".gitattributes" by a relative
+   * path; the pg-mutation scope trace resolves that open against the checkout, so the file is
+   * named here where the scope can see it (scripts/ci/pg-mutation-scope.mjs, PATH_RE).
+   */
+  function commitWith(message: string): { root: string; sha: string } {
+    const root = tempDir("we-trailer-");
+    const git = (...args: string[]): string =>
+      execFileSync("git", ["-C", root, ...args], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@example.test",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@example.test",
+          GIT_COMMITTER_DATE: "2026-11-26T14:07:00+00:00",
+        },
+      }).trim();
+    git("init", "-q");
+    writeFileSync(join(root, "example.json"), "{}\n");
+    git("add", "example.json");
+    git("commit", "-q", "-m", message);
+    return { root, sha: git("rev-parse", "HEAD") };
+  }
+  const noPull = async (): Promise<unknown> => null;
+
+  it("AP1 a commit carrying Authored-By: worked-examples-task is approved, by the task, with its sha and date", async () => {
+    const { root, sha } = commitWith(
+      "Worked examples W50\n\nAuthored-By: worked-examples-task\n",
+    );
+    const record = folderCommitRecord(root, sha);
+    expect(record.authoredBy).toEqual(["worked-examples-task"]);
+    let asked = false;
+    const verdict = await approvalForCommit(
+      record,
+      async () => {
+        asked = true;
+        return null;
+      },
+      "kingk237",
+    );
+    expect(verdict).toEqual({
+      ok: true,
+      approval: {
+        by: "worked-examples-task",
+        sha,
+        at: "2026-11-26T14:07:00.000Z",
+      },
+    });
+    // The trailer alone decides: GitHub is not asked.
+    expect(asked).toBe(false);
+    // And the approval is one a post may carry.
+    expect(
+      workedExampleApprovalSchema.safeParse(verdict.ok && verdict.approval)
+        .success,
+    ).toBe(true);
+  });
+
+  it("AP2 a commit with neither the trailer nor Karl's merge is refused", async () => {
+    for (const message of [
+      "Worked examples W50\n",
+      "Worked examples W50\n\nAuthored-By: someone-else\n",
+      // In the body but not a trailer (not in the final paragraph): git does not read it as one.
+      "Authored-By: worked-examples-task\n\nWorked examples W50\n",
+    ]) {
+      const { root, sha } = commitWith(message);
+      const verdict = await approvalForCommit(
+        folderCommitRecord(root, sha),
+        noPull,
+        "kingk237",
+      );
+      expect(verdict.ok, message).toBe(false);
+      expect(verdict.ok ? "" : verdict.reason, message).toMatch(
+        /carries no "Authored-By: worked-examples-task" trailer, and .*direct push approves nothing/,
+      );
+    }
+    // A merge by someone other than Karl is no approval either.
+    const { root, sha } = commitWith("Merge pull request #9\n");
+    const verdict = await approvalForCommit(
+      folderCommitRecord(root, sha),
+      async () => ({
+        number: 9,
+        merged: true,
+        merged_at: "2026-11-26T14:07:00Z",
+        merged_by: { login: "someone" },
+        merge_commit_sha: sha,
+        base: { ref: "social" },
+      }),
+      "kingk237",
+    );
+    expect(verdict).toMatchObject({
+      ok: false,
+      reason: expect.stringMatching(/not the approver/),
+    });
+  });
+
+  it("AP3 Karl's merge still approves", async () => {
+    const { root, sha } = commitWith("Merge pull request #9\n");
+    const verdict = await approvalForCommit(
+      folderCommitRecord(root, sha),
+      async () => ({
+        number: 9,
+        merged: true,
+        merged_at: "2026-11-26T14:07:00Z",
+        merged_by: { login: "kingk237" },
+        merge_commit_sha: sha,
+        base: { ref: "social" },
+      }),
+      "kingk237",
+    );
+    expect(verdict).toEqual({
+      ok: true,
+      approval: {
+        pr: 9,
+        mergedBy: "kingk237",
+        mergeSha: sha,
+        mergedAt: "2026-11-26T14:07:00Z",
+      },
+    });
+  });
+
+  it("AP4 the row records the task as the approver, at the commit's date; Karl's merge stays \"Karl\"", () => {
+    const sha = "c".repeat(40);
+    const task = seedRowValues(
+      fixture.content,
+      { by: "worked-examples-task", sha, at: "2026-11-26T14:07:00+00:00" },
+      kit.voice.outro_text,
+    );
+    expect(task).toMatchObject({
+      status: "approved",
+      approved_by: "worked-examples-task",
+      approved_at: "2026-11-26T14:07:00+00:00",
+    });
+    expect(
+      seedRow(
+        fixture.content,
+        { by: "worked-examples-task", sha, at: "2026-11-26T14:07:00+00:00" },
+        kit.voice.outro_text,
+      ),
+    ).toContain("$we$worked-examples-task$we$");
+    const merge = seedRowValues(
+      fixture.content,
+      {
+        pr: 9,
+        mergedBy: "kingk237",
+        mergeSha: sha,
+        mergedAt: "2026-11-26T15:00:00Z",
+      },
+      kit.voice.outro_text,
+    );
+    expect(merge).toMatchObject({
+      approved_by: "Karl",
+      approved_at: "2026-11-26T15:00:00Z",
+    });
+  });
+});
+
+describe("the weekly job admits an example: checks, approval, approved row (Karl, 2026-11-24, SCL-288)", () => {
+  const TASK = {
+    by: "worked-examples-task",
+    sha: "d".repeat(40),
+    at: "2026-11-26T14:07:00Z",
+  } as const;
+  function deps(over: Partial<AdmitDeps> = {}) {
+    const calls = { approve: 0, rows: [] as WorkedExampleRow[] };
+    const d: AdmitDeps = {
+      checkProblems: [],
+      approve: async () => {
+        calls.approve += 1;
+        return { ok: true, approval: TASK };
+      },
+      writeRow: async (row) => {
+        calls.rows.push(row);
+        return { ok: true };
+      },
+      outroText: kit.voice.outro_text,
+      ...over,
+    };
+    return { d, calls };
+  }
+
+  it("AD0 the fixture passes every pull-request check, so the job admits it and writes its approved row", async () => {
+    const { d, calls } = deps({ checkProblems: checkContent(CONTENT) });
+    expect(checkContent(CONTENT)).toEqual([]);
+    expect(await admitExample(fixture, d)).toEqual({
+      ok: true,
+      approval: TASK,
+    });
+    expect(calls.rows).toEqual([
+      seedRowValues(fixture.content, TASK, kit.voice.outro_text),
+    ]);
+    expect(calls.rows[0]?.status).toBe("approved");
+  });
+
+  it("AD1 a failing check refuses the example: nothing is approved and no row is written", async () => {
+    // The check's real output on a broken copy of the fixture: a hook that gives the answer away.
+    const broken = tempDir("we-check-");
+    cpSync(CONTENT, broken, { recursive: true });
+    const file = join(broken, fixture.dir, "example.json");
+    const json = JSON.parse(readFileSync(file, "utf8")) as {
+      hook: { line: string };
+    };
+    json.hook.line = "The answer is right there. Can you see it?";
+    writeFileSync(file, `${JSON.stringify(json, null, 2)}\n`);
+    const problems = checkContent(broken);
+    expect(problems.length).toBeGreaterThan(0);
+    const { d, calls } = deps({ checkProblems: problems });
+    const admitted = await admitExample(fixture, d);
+    expect(admitted).toMatchObject({
+      ok: false,
+      reason: expect.stringMatching(/^check failed: .*H5 gives the answer/),
+    });
+    expect(calls.approve).toBe(0);
+    expect(calls.rows).toEqual([]);
+  });
+
+  it("AD2 a database refusal refuses the example", async () => {
+    const { d, calls } = deps({
+      writeRow: async (row) => {
+        calls.rows.push(row);
+        return {
+          ok: false,
+          reason: `worked_example_leak: ${row.question_id} is in a full-length test form`,
+        };
+      },
+    });
+    const admitted = await admitExample(fixture, d);
+    expect(admitted).toEqual({
+      ok: false,
+      reason: `the database refused the approved row: worked_example_leak: ${fixture.content.question_id} is in a full-length test form`,
+    });
+    expect(calls.rows).toHaveLength(1);
+  });
+
+  it("AD3 an unapproved example is refused before any row is written", async () => {
+    const { d, calls } = deps({
+      approve: async () => ({ ok: false, reason: "no trailer, no merge" }),
+    });
+    expect(await admitExample(fixture, d)).toEqual({
+      ok: false,
+      reason: "not approved: no trailer, no merge",
+    });
+    expect(calls.rows).toEqual([]);
+  });
+
+  it("AD5 the weekly build refuses a failing example and records why (dry run on the fixture)", () => {
+    const broken = tempDir("we-build-");
+    cpSync(CONTENT, broken, { recursive: true });
+    const file = join(broken, fixture.dir, "example.json");
+    const json = JSON.parse(readFileSync(file, "utf8")) as {
+      hook: { line: string };
+    };
+    json.hook.line = "The answer is right there. Can you see it?";
+    writeFileSync(file, `${JSON.stringify(json, null, 2)}\n`);
+    const out = tempDir("we-build-out-");
+    execFileSync(
+      "pnpm",
+      [
+        "exec",
+        "tsx",
+        "scripts/worked-examples/weekly.ts",
+        "build",
+        "--content",
+        broken,
+        "--out",
+        out,
+        "--dry-run",
+        "--today",
+        "2026-10-29",
+        "--voice",
+        "committed",
+      ],
+      { cwd: ROOT, encoding: "utf8" },
+    );
+    const week = JSON.parse(readFileSync(join(out, "week.json"), "utf8")) as {
+      built: { date: string }[];
+      refused: { dir: string; reason: string }[];
+    };
+    // The week's other example still builds; only the failing one is refused.
+    expect(week.built.map((b) => b.date)).not.toContain(
+      fixture.content.post_on,
+    );
+    expect(week.built.length).toBeGreaterThan(0);
+    expect(week.refused).toEqual([
+      expect.objectContaining({
+        dir: fixture.dir,
+        reason: expect.stringMatching(/^check failed: .*H5 gives the answer/),
+      }),
+    ]);
+    expect(existsSync(join(out, fixture.content.post_on, "post.json"))).toBe(
+      false,
+    );
+  }, 120_000);
+
+  it("AD4 another example's problem does not refuse this one; its day, its month's plan and an unreadable tree do", () => {
+    const other =
+      "content/worked-examples/2026-W45/SATM2ZZZZZZ: H4 does not end in curiosity";
+    expect(checkProblemsFor([other], fixture)).toEqual([]);
+    const own = [
+      `${fixture.dir}: H4 does not end in curiosity`,
+      `2 examples post on ${fixture.content.post_on} (${fixture.dir}, content/worked-examples/2026-W45/SATM2ZZZZZZ): one a day`,
+      `content/worked-examples/${fixture.content.post_on.slice(0, 7)}-plan: slots are not in date order, one per day`,
+      "content/worked-examples/2026-W45/x/example.json: Unexpected token",
+    ];
+    expect(checkProblemsFor([other, ...own], fixture)).toEqual(own.slice(0, 3));
+    expect(
+      checkProblemsFor(["2026-W45 is not an ISO week folder"], fixture),
+    ).toEqual(["2026-W45 is not an ISO week folder"]);
   });
 });
