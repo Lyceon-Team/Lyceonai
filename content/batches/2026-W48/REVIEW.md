@@ -97,7 +97,7 @@ changed, or why not. One revision round: an item still not approved is carried t
 
 | Item | Finding | Response | Commit |
 | --- | --- | --- | --- |
-| `slug` | The finding. | Fixed: what changed. | abc1234 |
+| `send-sat-scores-to-colleges` | R3: "10 business days is two weeks on the calendar" is wrong across holidays; distinguish sending from college processing. R11: superscore link 404 before Nov 20. | Fixed R3: the line now says reports are usually sent within 10 business days, weekends and holidays don't count so it can run past two weeks, and each college then processes on its own time. R11 needs no change: /blog/sat-superscore is live (checked 2026-11-24). Applied after publication because the Nov 20 revise run failed. | d6c14d6 |
 
 ## 4. Karl decision
 
