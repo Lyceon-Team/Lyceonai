@@ -1,0 +1,46 @@
+{
+  "question_id": "SATM29IP8B0",
+  "skill_code": "Nonlinear Functions",
+  "post_on": "2026-12-02",
+  "hook": {
+    "type": "speed",
+    "line": "g(x) = f(x − 5) + 13. Its minimum, without expanding anything…",
+    "voice": "Think you need to expand f of x minus five? You don't. Let's see."
+  },
+  "question_voice": "A parabola, slid sideways and lifted up, and we want the lowest value of the new one.",
+  "signature_move": "Find the vertex: x = −b ÷ 2a, then plug it back in.",
+  "steps": [
+    {
+      "notepad": "x = −42 ÷ (2 · 3) = −7",
+      "voice": "Find f's vertex. x is negative b over two a. Negative forty-two over six. Negative seven."
+    },
+    {
+      "notepad": "f(−7) = 147 − 294 + 151 = 4",
+      "voice": "Plug it in. One forty-seven, minus two ninety-four, plus one fifty-one. Four. That's f's lowest value."
+    },
+    {
+      "notepad": "x − 5: same lowest value",
+      "voice": "The minus five inside just slides the graph sideways. The lowest value doesn't move."
+    },
+    {
+      "notepad": "+ 13: 4 + 13 = 17",
+      "voice": "The plus thirteen lifts everything up thirteen. Four plus thirteen. Seventeen."
+    }
+  ],
+  "answer": {
+    "letter": "B",
+    "notepad": "Answer: B) 17",
+    "voice": "Seventeen. That's B. Quick check: g's vertex sits at x equals negative two, and g of negative two is f of negative seven, plus thirteen."
+  },
+  "trap": {
+    "summary": "Stopping at f's minimum (4) and choosing A, or thinking the shift by 5 changes the minimum.",
+    "notepad": [
+      "min of f = 4 → A ✗",
+      "+ 13 lifts it",
+      "4 + 13 = 17 ✓"
+    ],
+    "voice": "The trap is stopping at four. That's f's lowest point, but g adds thirteen on top. That's A."
+  },
+  "check": "g's vertex is (−2, 17): g(−2) = f(−7) + 13 = 17.",
+  "takeaway": "A sideways shift moves the vertex, not the minimum."
+}
