@@ -17,7 +17,8 @@
  *      ways of naming a choice; it does not flag a reply that works from the passage, quotes the
  *      passage, or says "a correct answer". `hasAnswerLeak` misses the production reply (it
  *      looks only for the key's letter), which is why the rule needs its own check.
- *   R1 G0-2-08's rubric carries the rule as a must-not item and is complete (scoreable), and the
+ *   R1 G0-2-09's rubric (the before-submission case, re-scoped from G0-2-08 on 2026-11-22) carries
+ *      the rule as a must-not item and is complete (scoreable), and the
  *      judge's message for it shows the passage and the rule, never the key.
  * The item is SATRW23GOZ2P as the bank holds it. No student text exists in this file.
  */
@@ -45,8 +46,12 @@ import { REVIEW_PRE_SUBMIT_COPY } from "../../apps/workers/tutor-orchestrator/sr
 import { optionMentions } from "../eval/teaching-quality/option-mentions";
 import { buildJudgeUserMessage } from "../eval/teaching-quality/judge";
 import {
+  ENDORSES_WRONG_OPTION,
+  EXPLAINS_KEY_FROM_PASSAGE,
   NO_OPTION_NAMED_BEFORE_SUBMISSION,
+  TEACHING_QUALITY_RUBRICS,
   rubricFor,
+  rubricScopeConflict,
 } from "../eval/teaching-quality/rubrics";
 
 type Over = Partial<OrchestrateRequest>;
@@ -182,8 +187,8 @@ describe("optionMentions: the deterministic half of the rule", () => {
     }
   });
 
-  it("R1 G0-2-08's rubric carries the rule and is scoreable", () => {
-    const rubric = rubricFor("G0-2-08");
+  it("R1 G0-2-09's rubric carries the rule and is scoreable", () => {
+    const rubric = rubricFor("G0-2-09");
     expect(rubric?.must_not).toContain(NO_OPTION_NAMED_BEFORE_SUBMISSION);
     expect(NO_OPTION_NAMED_BEFORE_SUBMISSION).toMatch(
       /^No option named before submission/,
@@ -222,5 +227,42 @@ describe("optionMentions: the deterministic half of the rule", () => {
         "The passage says the proverbs carry the argument. Submit it and we'll go through it together.",
       ),
     ).toBe(false);
+  });
+});
+
+describe("G0-2-08 / G0-2-09 scopes (owner brief 2026-11-22)", () => {
+  it("R2 G0-2-08 is the post-submit control; G0-2-09 holds the before-submission rule", () => {
+    const g08 = rubricFor("G0-2-08");
+    const g09 = rubricFor("G0-2-09");
+    expect(g08?.submit_state).toBe("post_submit");
+    expect(g08?.must).toContain(EXPLAINS_KEY_FROM_PASSAGE);
+    expect(g08?.must_not).toContain(ENDORSES_WRONG_OPTION);
+    expect(g08?.must_not).not.toContain(NO_OPTION_NAMED_BEFORE_SUBMISSION);
+    expect(g09?.submit_state).toBe("pre_submit");
+    expect(g09?.must_not).toContain(NO_OPTION_NAMED_BEFORE_SUBMISSION);
+  });
+
+  it("R3 every rubric's wording agrees with its scope; only a post-submit rubric names the key", () => {
+    for (const r of TEACHING_QUALITY_RUBRICS) {
+      const text = [
+        r.judge_note ?? "",
+        ...(r.must ?? []),
+        ...(r.must_not ?? []),
+      ].join("\n");
+      if (/before submission/i.test(text))
+        expect(r.submit_state, r.case_id).toBe("pre_submit");
+      if (/after submission/i.test(text))
+        expect(r.submit_state, r.case_id).toBe("post_submit");
+      if (/the key is [A-D]\b/i.test(text))
+        expect(r.submit_state, r.case_id).toBe("post_submit");
+    }
+    // The scope check the import makes, both ways.
+    const g09 = rubricFor("G0-2-09");
+    expect(
+      g09 === null ? "missing" : rubricScopeConflict(g09, false),
+    ).toBeNull();
+    expect(g09 === null ? null : rubricScopeConflict(g09, true)).toMatch(
+      /scoped before submission, but this cut-off is after it/,
+    );
   });
 });
