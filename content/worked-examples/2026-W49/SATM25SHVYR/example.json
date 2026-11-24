@@ -1,0 +1,104 @@
+{
+  "question_id": "SATM25SHVYR",
+  "skill_code": "Area and Volume",
+  "post_on": "2026-12-04",
+  "hook": {
+    "type": "puzzle",
+    "line": "Carve a cone out of a cylinder, radius 4, height 9. What's left?",
+    "voice": "Here's a puzzle. How much of a cylinder is left once you scoop a cone out of it?"
+  },
+  "question_voice": "A cylinder with a cone hollowed out of it, same base and same height, and we want what's left.",
+  "signature_move": "Write the formula first, then substitute before you compute.",
+  "steps": [
+    {
+      "notepad": "cylinder: π · 4² · 9 = 144π",
+      "voice": "Formula first. A cylinder is pi r squared h. Pi times sixteen times nine. One forty-four pi."
+    },
+    {
+      "notepad": "cone: ⅓ · 144π = 48π",
+      "voice": "Same base, same height, so the cone is a third of that. Forty-eight pi."
+    },
+    {
+      "notepad": "left: 144π − 48π = 96π",
+      "voice": "Take the cone away. One forty-four minus forty-eight. Ninety-six pi."
+    }
+  ],
+  "answer": {
+    "letter": "C",
+    "notepad": "Answer: C) 96π",
+    "voice": "Ninety-six pi. That's C. Quick check: what's left is two thirds of the cylinder, and two thirds of one forty-four is ninety-six."
+  },
+  "trap": {
+    "summary": "Answering with the cone's own volume (48π) instead of what remains, choosing A.",
+    "notepad": [
+      "cone = 48π → A ✗",
+      "asked: what's LEFT",
+      "144π − 48π = 96π ✓"
+    ],
+    "voice": "The trap is stopping at the cone. Forty-eight pi is what you took out, not what's left. That's A."
+  },
+  "check": "96π = ⅔ · 144π.",
+  "takeaway": "Same base and height: a cone is one third of its cylinder.",
+  "figure": {
+    "box": {
+      "x": [
+        -6,
+        8
+      ],
+      "y": [
+        -4,
+        11
+      ]
+    },
+    "shapes": [
+      {
+        "kind": "cylinder",
+        "base": [
+          0,
+          0
+        ],
+        "r": 4,
+        "h": 9,
+        "ry": 1.3
+      },
+      {
+        "kind": "segment",
+        "from": [
+          0,
+          0
+        ],
+        "to": [
+          4,
+          0
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "4",
+        "at": [
+          2,
+          -2.6
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "9",
+        "at": [
+          5.4,
+          4.5
+        ]
+      },
+      {
+        "kind": "cone",
+        "base": [
+          0,
+          0
+        ],
+        "r": 4,
+        "h": 9,
+        "ry": 1.3,
+        "when": "step-2"
+      }
+    ]
+  }
+}
