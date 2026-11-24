@@ -195,6 +195,49 @@ export const publicPricingResponseSchema = z.object({
 });
 
 /**
+ * What GET /api/public/pricing/plans returns: the three parent plans' price tags, for the
+ * public `/parent` page.
+ *
+ * @spec [Doc 09 §1.4, §5.1 Stripe canonical for pricing magnitudes at runtime; owner brief
+ *        2026-11-22 (`/parent` shows all three plans, prices from `/api/public/pricing`);
+ *        Coding Standards §7.1, §7.2] | @implemented [2026-11-22]
+ *
+ * plain English: one row per plan, each a price tag and nothing else — amount, currency,
+ * interval and interval count. Expected outcome: `/parent` can show monthly, quarterly and
+ * yearly prices and work out the yearly saving from real numbers.
+ *
+ * WHY A SIBLING PATH AND NOT A WIDER `/api/public/pricing`. The 2026-09-03 ruling fixed that
+ * route at three fields and "no plan list", and its contract test pins it. Widening it would
+ * reverse a ruling the homepage still depends on, so the plan list lives one path down, under
+ * the same router, memo and cache policy. Like its sibling it carries no price id and no
+ * product: nothing that describes the billing setup behind the numbers.
+ *
+ * `intervalCount` is data rather than prose so the client can divide by it: "about $X a month"
+ * is the yearly amount over twelve months, and that needs the count, not a label.
+ */
+export const publicPlanPriceSchema = z
+  .object({
+    plan: billingPeriodSchema,
+    amountCents: z.number().int().positive(),
+    currency: z.string().min(1),
+    interval: z.enum(["month", "year"]),
+    intervalCount: z.number().int().positive(),
+  })
+  .strict();
+
+export type PublicPlanPrice = z.infer<typeof publicPlanPriceSchema>;
+
+export const publicPlanPricesResponseSchema = z
+  .object({
+    data: z.object({ plans: z.array(publicPlanPriceSchema) }).strict(),
+  })
+  .strict();
+
+export type PublicPlanPrices = z.infer<
+  typeof publicPlanPricesResponseSchema
+>["data"];
+
+/**
  * What GET /api/billing/plans returns, per plan.
  *
  * @spec [Doc 09 §1.4, §5.1 Stripe is canonical for pricing magnitudes at

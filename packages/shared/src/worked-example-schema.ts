@@ -425,6 +425,13 @@ export const workedExamplePostSchema = z
     facebook_caption: z.string().min(1),
     /** TikTok's "Manage keywords", one per entry (shared/social/posts.ts socialKeywords). */
     keywords: z.array(z.string().min(1)).min(1),
+    /**
+     * YouTube Shorts, from W48 (Karl, 2026-11-14): the title (headline + " #Shorts", at most 100
+     * characters) and the description (headline, comment prompt, the tagged link, hashtags).
+     * Absent on earlier posts; both or neither.
+     */
+    youtube_title: z.string().min(1).max(100).optional(),
+    youtube_description: z.string().min(1).optional(),
     /** QA warnings posted first, outside the copy blocks ("SAT date list needs updating"). */
     warnings: z.array(z.string().min(1)),
     /** The tagged /start links: kept for the run's download, never posted (SCL-262). */
@@ -440,6 +447,24 @@ export const workedExamplePostSchema = z
   })
   .strict()
   .superRefine((post, ctx) => {
+    if (
+      (post.youtube_title === undefined) !==
+      (post.youtube_description === undefined)
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["youtube_description"],
+        message: "the YouTube title and description come together",
+      });
+    if (
+      post.youtube_description !== undefined &&
+      !post.youtube_description.startsWith(`${post.title}\n`)
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["youtube_description"],
+        message: "must open with the title (the headline)",
+      });
     for (const key of [
       "caption",
       "instagram_caption",

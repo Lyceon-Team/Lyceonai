@@ -29,9 +29,16 @@ export const START_HOST = "lyceon.ai";
  * The channels and campaigns the social links name. Each value must also be on the sign-up
  * attribution allowlists (SIGNUP_CHANNELS / SIGNUP_CAMPAIGNS, packages/shared/src/
  * signup-attribution.ts, landing with #1359), which own what a sign-up records; a value missing
- * there is recorded as no value, not as this one.
+ * there is recorded as no value, not as this one. `youtube` (the worked-example Shorts link, Karl
+ * 2026-11-14) joins SIGNUP_CHANNELS with SCL-278 (#1489, into cleanup); until that is applied a
+ * Shorts sign-up is recorded as `other`.
  */
-export const FUNNEL_LINK_CHANNELS = ["reddit", "tiktok", "instagram"] as const;
+export const FUNNEL_LINK_CHANNELS = [
+  "reddit",
+  "tiktok",
+  "instagram",
+  "youtube",
+] as const;
 export const FUNNEL_LINK_CAMPAIGNS = ["qotd", "worked_example"] as const;
 export type FunnelLinkChannel = (typeof FUNNEL_LINK_CHANNELS)[number];
 export type FunnelLinkCampaign = (typeof FUNNEL_LINK_CAMPAIGNS)[number];
@@ -80,16 +87,40 @@ export const START_SUBHEAD =
 export const START_TRY_ONE =
   "Answer today's SAT question below, no account needed. Then sign up free to find your blind spots and keep practising every day.";
 
-/** A link to /start tagged with where it was posted, as people see it (no scheme). */
+/**
+ * A link to /start tagged with where it was posted, as people see it (no scheme). `medium` names
+ * the format within the channel where one is ruled (YouTube Shorts: `shorts`, Karl 2026-11-14).
+ */
 export function startLink(
   channel: FunnelLinkChannel,
   campaign: FunnelLinkCampaign,
+  medium?: string,
 ): string {
   const params = new URLSearchParams({
     utm_source: channel,
+    ...(medium === undefined ? {} : { utm_medium: medium }),
     utm_campaign: campaign,
   });
   return `${START_HOST}${START_PATH}?${params.toString()}`;
+}
+
+/** The YouTube Shorts medium (Karl, 2026-11-14: "utm_source=youtube&utm_medium=shorts"). */
+export const YOUTUBE_SHORTS_MEDIUM = "shorts";
+
+/**
+ * The YouTube Shorts description's link: a full https address, since a YouTube description links
+ * an address only with its scheme. Credited to `youtube` at sign-up once SCL-278 is applied.
+ */
+export function youtubeShortsLink(campaign: FunnelLinkCampaign): string {
+  return `https://${startLink("youtube", campaign, YOUTUBE_SHORTS_MEDIUM)}`;
+}
+
+/** The YouTube Shorts description's call to action: linkCtaLine's wording, with the full link. */
+export function youtubeShortsCtaLine(
+  phase: FunnelPhase,
+  campaign: FunnelLinkCampaign,
+): string {
+  return `${ctaLead(phase)} ${youtubeShortsLink(campaign)}`;
 }
 
 /** The last line of a TikTok caption (links live in the bio there). */
@@ -131,11 +162,14 @@ export function linkCtaLine(
   channel: FunnelLinkChannel,
   campaign: FunnelLinkCampaign,
 ): string {
-  const lead =
-    phase === "cohort"
-      ? `Taking the SAT ${cohortDateLabel()}? Free SAT practice:`
-      : "Free SAT practice:";
-  return `${lead} ${startLink(channel, campaign)}`;
+  return `${ctaLead(phase)} ${startLink(channel, campaign)}`;
+}
+
+/** "Taking the SAT Dec 5? Free SAT practice:" until the cohort's test day, then the plain lead. */
+function ctaLead(phase: FunnelPhase): string {
+  return phase === "cohort"
+    ? `Taking the SAT ${cohortDateLabel()}? Free SAT practice:`
+    : "Free SAT practice:";
 }
 
 /**

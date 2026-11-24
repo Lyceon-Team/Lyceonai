@@ -472,8 +472,31 @@ export function socialCopyProblems(
   return problems;
 }
 
+/**
+ * A text and the forms any output may carry it in: as written, the plain text with powers in
+ * superscripts (x², Karl's ruling 2026-11-16), the plain text before that ruling (x^2), and the
+ * alt text's spoken form (x squared). A leak check looks for every one, so no form gets past it.
+ */
+export function mathForms(text: string): string[] {
+  const spoken = speakMixedText(text);
+  return [
+    ...new Set([
+      text,
+      plainMathText(text),
+      plainMathText(text, { superscripts: false }),
+      ...(spoken === null ? [] : [spoken]),
+    ]),
+  ];
+}
+
+/**
+ * Words and numbers only, for matching. NFKC folds the maths letters KaTeX draws (𝑥 is x) and
+ * the superscripts plain text writes (² is 2), so a rendered card's text and the plain forms
+ * (mathForms) compare as words and numbers like the rest (Karl, 2026-11-16).
+ */
 function normalize(text: string): string {
   return ` ${text
+    .normalize("NFKC")
     .toLowerCase()
     .replace(/[^a-z0-9.]+/g, " ")
     .replace(/\.(?!\d)/g, " ")
@@ -487,6 +510,17 @@ function containsPhrase(haystack: string, phrase: string): boolean {
 }
 
 const EXPLANATION_WINDOW = 8;
+
+/** Every run of EXPLANATION_WINDOW words of the explanation, in each of its forms (mathForms). */
+function explanationWindows(explanation: string): string[] {
+  const out = new Set<string>();
+  for (const form of mathForms(explanation)) {
+    const words = normalize(form).trim().split(" ");
+    for (let k = 0; k + EXPLANATION_WINDOW <= words.length; k += 1)
+      out.add(words.slice(k, k + EXPLANATION_WINDOW).join(" "));
+  }
+  return [...out];
+}
 
 /**
  * Every way the caption, alt text, card text or Instagram caption gives away the revealed answer
@@ -525,17 +559,12 @@ export function socialAssetLeaks(
   /** Fields that must name no choice at all. */
   const namesNoChoice = new Set(["caption", "instagram_caption"]);
 
-  const explanationWords = normalize(day.question.explanation)
-    .trim()
-    .split(" ");
+  const explanationRuns = explanationWindows(day.question.explanation);
   for (const [field, text] of fields) {
     const haystack = normalize(text);
 
-    // 1. Any run of the explanation not already in the question.
-    for (let k = 0; k + EXPLANATION_WINDOW <= explanationWords.length; k += 1) {
-      const window = explanationWords
-        .slice(k, k + EXPLANATION_WINDOW)
-        .join(" ");
+    // 1. Any run of the explanation, in any of its forms, not already in the question.
+    for (const window of explanationRuns) {
       if (
         haystack.includes(` ${window} `) &&
         !question.includes(` ${window} `)
@@ -566,8 +595,7 @@ export function socialAssetLeaks(
   //    form or as plain text (maths written out as text).
   if (day.question.item_type === "mcq") {
     const showsChoice = (haystack: string, text: string): boolean =>
-      containsPhrase(haystack, text) ||
-      containsPhrase(haystack, plainMathText(text));
+      mathForms(text).some((form) => containsPhrase(haystack, form));
     const correct = day.question.options.find(
       (o) => o.id === day.question.correct_option_id,
     );
@@ -623,8 +651,7 @@ export function tiktokCarouselLeaks(
   const allowed = normalize(
     [
       questionText(socialInputFromArchive(carouselDay)),
-      yq.explanation,
-      plainMathText(yq.explanation),
+      ...mathForms(yq.explanation),
       yq.correct_answer ?? "",
       // The carousel's own date, long and short: a choice like "22" is not a leak on Oct 22.
       formatSocialDate(carouselDay.qotd_date),
@@ -643,8 +670,8 @@ export function tiktokCarouselLeaks(
     (t) => t.trim().length > 0,
   );
   const answer = today.revealed?.question ?? null;
-  const explanationWords =
-    answer === null ? [] : normalize(answer.explanation).trim().split(" ");
+  const explanationRuns =
+    answer === null ? [] : explanationWindows(answer.explanation);
   const correct =
     answer?.item_type === "mcq"
       ? answer.options.find((o) => o.id === answer.correct_option_id)
@@ -652,16 +679,13 @@ export function tiktokCarouselLeaks(
   for (const [field, text] of fields) {
     const haystack = normalize(text);
     for (const t of todayText) {
-      for (const form of [t, plainMathText(t)]) {
+      for (const form of mathForms(t)) {
         if (containsPhrase(haystack, form) && !containsPhrase(allowed, form)) {
           leaks.push(`${field}: carries today's question`);
         }
       }
     }
-    for (let k = 0; k + EXPLANATION_WINDOW <= explanationWords.length; k += 1) {
-      const window = explanationWords
-        .slice(k, k + EXPLANATION_WINDOW)
-        .join(" ");
+    for (const window of explanationRuns) {
       if (
         haystack.includes(` ${window} `) &&
         !allowed.includes(` ${window} `)
@@ -680,7 +704,7 @@ export function tiktokCarouselLeaks(
       leaks.push(`${field}: carries today's grid-in answer "${todayValue}"`);
     }
     if (correct) {
-      for (const form of [correct.text, plainMathText(correct.text)]) {
+      for (const form of mathForms(correct.text)) {
         if (containsPhrase(haystack, form) && !containsPhrase(allowed, form)) {
           leaks.push(
             `${field}: names today's correct choice "${correct.text}"`,

@@ -56,12 +56,15 @@ import {
 } from "../lib/schema.js";
 import { renderDataBlock } from "../lib/_tutor-safety-constants.generated.js";
 import { masteryLevelToBand } from "./mastery-bands.js";
+import { REVIEW_PRE_SUBMIT_COPY } from "./lisa-default-v2.js";
 
 export type StateBlockOptions = {
   /** Render data-derived values as data blocks (lisa-default-v5 and later). */
   dataBoundary: boolean;
   /** Render the [HELP LEVEL] block when the request carries a help level (lisa-default-v6). */
   helpLevel?: boolean;
+  /** Add the Reading & Writing worked-step rule to that block (lisa-default-v7). */
+  rwWorkedStep?: boolean;
 };
 
 /** Renders one data-derived value: a data block, or (v1–v4) the value as it always was. */
@@ -106,7 +109,9 @@ export function renderStateBlocks(
   if (videoBlock) blocks.push(videoBlock);
 
   if (options.helpLevel === true) {
-    const helpBlock = renderHelpLevelBlock(request);
+    const helpBlock = renderHelpLevelBlock(request, {
+      rwWorkedStep: options.rwWorkedStep === true,
+    });
     if (helpBlock) blocks.push(helpBlock);
   }
 
@@ -134,8 +139,41 @@ export function renderStateBlocks(
  * treated as the last worked step, and so is worked step 3 whatever its `final` flag says. The
  * BFF never sends either.
  */
+/**
+ * @spec [owner brief "Reading & Writing worked step", Karl 2026-11-22: "before submission, a
+ *       worked step on an RW item must never name, rank or rule out an answer option. It works
+ *       only from the passage and the question." Production case SATRW23GOZ2P (key A): at
+ *       worked_step LISA said "Let's look at Option B"] | @implemented [2026-11-22]
+ * plain English: on a Reading & Writing question the "steps" are reading the question, finding
+ * what the passage says, and stating what an answer would have to do. Walking the choices one by
+ * one is the answer itself (ruling one out narrows the field), so before submission it is not
+ * allowed at any worked step. Lisa-default-v7 only; v6 renders without it.
+ * The "borrow a word" clause (2026-11-22, from the synthetic replay): a first wording left 2 of 15
+ * worked steps asking "Which option describes a proverb acting as a structural pivot?", the key's
+ * own word ("pivot") with no letter, which points at it as surely as naming it. Tightened the
+ * same day to "a word that appears in a choice but not in the passage or the question": "rather
+ * than just decoration" (choice A's "not as decoration") still got through 1 of 15.
+ * The submit-line clause (Karl's ruling, 2026-11-22: "on a worked-step turn the 'Submit it and
+ * we'll go through it together.' line never replaces the step; it is only for a direct request for
+ * the answer. Every worked step gives the next step from the passage and question"): without it,
+ * about a third of the RW worked steps replied with only v2's review copy (v6: 1–2 of 15), because
+ * the review rule's "when they ask for the answer" was read into a "Got it, next step" tap.
+ */
+export const RW_WORKED_STEP_RULE =
+  `This is a Reading and Writing question: work this step only from the passage and the ` +
+  `question (what the question asks, what the passage says, and what a correct answer would ` +
+  `have to do, said in the passage's own terms). Do not name, quote, describe, rank, compare or ` +
+  `rule out any answer choice, by letter or by its words, not even a wrong one, and do not use ` +
+  `any word or detail that appears in a choice but not in the passage or the question (say ` +
+  `what an answer must do in the passage's words only). The student holds each ` +
+  `choice up against your reasoning themselves. This message is a worked step, not a request ` +
+  `for the answer: always give the next step from the passage and the question, and never ` +
+  `reply with only "${REVIEW_PRE_SUBMIT_COPY}" That line is only for a direct request for ` +
+  `the answer or for whether a choice is right.`;
+
 export function renderHelpLevelBlock(
   request: OrchestrateRequest,
+  options: { rwWorkedStep: boolean } = { rwWorkedStep: false },
 ): string | null {
   const sent = request.help_level;
   if (sent === undefined) return null;
@@ -171,6 +209,14 @@ export function renderHelpLevelBlock(
         (sent === "full_solution"
           ? { index: 3, final: true }
           : { index: 1, final: false });
+      // lisa-default-v7: on a Reading & Writing item before submission, a worked step works from
+      // the passage and the question only, and never touches an answer choice (RW_WORKED_STEP_RULE).
+      const rw =
+        options.rwWorkedStep &&
+        preSubmit &&
+        request.question_content?.section === "RW"
+          ? ` ${RW_WORKED_STEP_RULE}`
+          : "";
       if (preSubmit && (step.final || step.index >= 3)) {
         return (
           `${fact(`level 3 of 4, worked step ${step.index} of 3, the last step allowed before the student answers`)}
@@ -178,7 +224,8 @@ export function renderHelpLevelBlock(
           `${head}Treat the solution as at most three worked steps. Work every step except the ` +
           `final one, showing the work, and stop just before the final value. Then ask the ` +
           `student to do the final step and choose the answer themselves. Never state the ` +
-          `answer, the final value, or which choice is correct.`
+          `answer, the final value, or which choice is correct.` +
+          rw
         );
       }
       return (
@@ -189,7 +236,8 @@ export function renderHelpLevelBlock(
         `ask the student to try the next step. Do not do any later step` +
         (preSubmit
           ? `, and never state the answer, the final value, or which choice is correct.`
-          : `.`)
+          : `.`) +
+        rw
       );
     }
     case "full_solution":

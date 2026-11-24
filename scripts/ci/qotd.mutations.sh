@@ -47,6 +47,7 @@ FILES=(
   "shared/qotd/reveal.ts"
   "scripts/qotd-social/post-to-slack.ts"
   "shared/qotd/tiktok.ts"
+  "shared/qotd/plain-math.ts"
   "shared/social/posts.ts"
   "client/src/components/qotd/QotdTiktokSlide.tsx"
   "shared/slack/client.ts"
@@ -481,9 +482,10 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M42 slides not posted" "three slides shared under the TikTok line, then one caption block and one keywords block" "$OUT" "$RC"
 restore
 
+# M43, M58, M59 re-pointed 2026-11-16: the Why keeps its maths for KaTeX and measures visible text.
 echo "=== (43) the Why line ignores the 300-character cap ==="
 plant shared/qotd/tiktok.ts \
-  "    if (next.length > QOTD_TIKTOK_WHY_MAX) break;" \
+  "    if (visibleWhyLength(next) > QOTD_TIKTOK_WHY_MAX) break;" \
   "    if (false) break;" || { bad "M43 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M43 Why over 300" "the Why line is at most 300 characters" "$OUT" "$RC"
@@ -592,7 +594,8 @@ restore
 # Karl's ruling 2026-10-26 on #1308: a long first sentence is cut, never a skipped carousel.
 echo "=== (58) a long first sentence skips the Why again (no cut fallback) ==="
 plant shared/qotd/tiktok.ts \
-  "  if (first.length > QOTD_TIKTOK_WHY_MAX) return cutFirstSentence(first);" \
+  "  if (visibleWhyLength(first) > QOTD_TIKTOK_WHY_MAX)
+    return cutFirstSentence(first);" \
   "" || { bad "M58 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M58 no cut fallback" "a first sentence over 300 characters is cut at the last word boundary" "$OUT" "$RC"
@@ -600,8 +603,8 @@ restore
 
 echo "=== (59) the cut falls mid-word ==="
 plant shared/qotd/tiktok.ts \
-  '  const space = head.lastIndexOf(" ");' \
-  "  const space = -1;" || { bad "M59 STALE"; exit 1; }
+  '  const cut = best ?? plainMathText(sentence).slice(0, room);' \
+  '  const cut = plainMathText(sentence).slice(0, room);' || { bad "M59 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M59 cut mid-word" "a first sentence over 300 characters is cut at the last word boundary" "$OUT" "$RC"
 restore
@@ -740,6 +743,48 @@ plant scripts/qotd-social/post-to-slack.ts \
   ' image(s), the Instagram and Facebook captions, the Reddit post and the TikTok carousel (' || { bad "M76 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M76 dry run names Reddit" "the dry run builds the same message and names nothing Reddit-related" "$OUT" "$RC"
+restore
+
+# Karl, 2026-11-16: maths that reads like maths. Unicode powers in plain text, KaTeX for the Why
+# on slide 3, and the leak checks catching the answer and explanation in every form.
+echo "=== (77) plain text back to x^2 (no superscripts) ==="
+plant shared/qotd/plain-math.ts \
+  '  const superscripts = options.superscripts !== false;' \
+  '  const superscripts = options.superscripts === true;' || { bad "M77 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M77 powers as x^2" "plain text writes powers as superscripts" "$OUT" "$RC"
+restore
+
+echo "=== (78) the Why flattened to plain text before the slide ==="
+plant shared/qotd/tiktok.ts \
+  '  const all = sentences(masked).map(restore);' \
+  '  const all = sentences(plainMathText(explanation));' || { bad "M78 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M78 Why flattened" "slide 3 typesets the Why with KaTeX" "$OUT" "$RC"
+restore
+
+echo "=== (79) slide 3 prints the Why as text, not KaTeX ==="
+plant client/src/components/qotd/QotdTiktokSlide.tsx \
+  '          <b>Why:</b> <StaticMath content={carousel.why} />' \
+  '          <b>Why:</b> {carousel.why}' || { bad "M79 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M79 Why not typeset" "slide 3 typesets the Why with KaTeX" "$OUT" "$RC"
+restore
+
+echo "=== (81) LEAK: the leak check no longer folds KaTeX's maths letters (𝑥) ==="
+plant shared/qotd/social.ts \
+  '    .normalize("NFKC")' \
+  '    .normalize("NFC")' || { bad "M81 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M81 KaTeX letters unread" "today's correct choice as KaTeX draws it (in Chromium (maths italic)) on a slide is a leak" "$OUT" "$RC"
+restore
+
+echo "=== (82) LEAK: the alt text's spoken maths is not one of the forms ==="
+plant shared/qotd/social.ts \
+  '      ...(spoken === null ? [] : [spoken]),' \
+  '' || { bad "M82 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M82 spoken form missing" "the Instagram caption and caption: the correct choice in superscripts is a leak" "$OUT" "$RC"
 restore
 
 echo "=== RESTORED: re-check green ==="

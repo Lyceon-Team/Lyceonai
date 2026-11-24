@@ -1,5 +1,5 @@
 /**
- * The prompt LISA runs on by default: lisa-default-v6.
+ * The prompt LISA runs on by default: lisa-default-v7.
  *
  * @spec [Doc-03A_V3 §11.4 (latest artifact per variant), Doc-03C_V3 §4.3 (registry resolution);
  *       SCL-275; Karl's rulings 2026-11-11 on the real G0-2 runs] | @implemented [2026-11-11]
@@ -11,12 +11,16 @@
  *  - then v6, from G0-2-04, the "Got it" loop (batch c9f89683, help level computed in the
  *    replay): v6 did the worked step 5/5 (v5 0/5), no smaller question, restarted 1/5, leaked 0.
  *    With no help level sent v6 renders exactly as v5, so the Desmos gap is run-to-run variation.
- *   P1 every policy variant resolves a null version to v6.
- *   P2 an unknown variant (the fallback) and an unknown version both land on v6.
+ *  - then v7 (owner brief "Reading & Writing worked step", 2026-11-22: "Bump the prompt
+ *    version"): v6 plus one sentence on RW worked steps before submission, after SATRW23GOZ2P's
+ *    worked step said "Let's look at Option B". Every other turn renders exactly as v6.
+ *   P1 every policy variant resolves a null version to v7.
+ *   P2 an unknown variant (the fallback) and an unknown version both land on v7.
  *   P3 every other artifact still resolves by exact version, so attribution and the eval
  *      harness can name it.
  *   P4 what the worker builds for a null-version request carrying a help level, on every
- *      variant, has v6's [HELP LEVEL] block, which v5 and earlier never render.
+ *      variant, has the [HELP LEVEL] block (v6 and later) and, on an RW item before submission,
+ *      v7's Reading & Writing rule, which v6 and earlier never render.
  *   P5 the shared `DEFAULT_PROMPT_VERSION` other tests read agrees with this file.
  * Changing the default means changing this file and that constant, with the ruling.
  */
@@ -31,7 +35,8 @@ vi.mock(
 );
 
 import { resolvePromptArtifact } from "../../apps/workers/tutor-orchestrator/src/prompts/prompt-registry";
-import { LISA_DEFAULT_V6 } from "../../apps/workers/tutor-orchestrator/src/prompts/lisa-default-v6";
+import { LISA_DEFAULT_V7 } from "../../apps/workers/tutor-orchestrator/src/prompts/lisa-default-v7";
+import { RW_WORKED_STEP_RULE } from "../../apps/workers/tutor-orchestrator/src/prompts/render-state-blocks";
 import { buildSystemInstruction } from "../../apps/workers/tutor-orchestrator/src/routes/orchestrate";
 import { DATA_BLOCK_OPEN_PREFIX } from "../../shared/tutor-safety-constants";
 import {
@@ -39,7 +44,7 @@ import {
   buildGoldenEnvelope,
 } from "./lisa-golden-set-helpers";
 
-const DEFAULT_VERSION = "lisa-default-v6";
+const DEFAULT_VERSION = "lisa-default-v7";
 const VARIANTS = [
   "default",
   "scaffolded",
@@ -48,15 +53,15 @@ const VARIANTS = [
   "strategy_first",
 ] as const;
 
-describe("the default prompt is lisa-default-v6 (Karl, 2026-11-11)", () => {
-  it("P1 every variant resolves a null version to v6", () => {
+describe("the default prompt is lisa-default-v7 (owner brief, 2026-11-22)", () => {
+  it("P1 every variant resolves a null version to v7", () => {
     for (const variant of VARIANTS) {
-      expect(resolvePromptArtifact(variant, null)).toBe(LISA_DEFAULT_V6);
+      expect(resolvePromptArtifact(variant, null)).toBe(LISA_DEFAULT_V7);
     }
-    expect(LISA_DEFAULT_V6.version).toBe(DEFAULT_VERSION);
+    expect(LISA_DEFAULT_V7.version).toBe(DEFAULT_VERSION);
   });
 
-  it("P2 the fallback is v6: an unknown variant, and an unknown version", () => {
+  it("P2 the fallback is v7: an unknown variant, and an unknown version", () => {
     expect(resolvePromptArtifact("no-such-variant", null).version).toBe(
       DEFAULT_VERSION,
     );
@@ -75,12 +80,13 @@ describe("the default prompt is lisa-default-v6 (Karl, 2026-11-11)", () => {
       "lisa-default-v3",
       "lisa-default-v4",
       "lisa-default-v5",
+      "lisa-default-v6",
     ]) {
       expect(resolvePromptArtifact("default", version).version).toBe(version);
     }
   });
 
-  it("P4 a null-version request with a help level is built with v6's block, on every variant", () => {
+  it("P4 a null-version request with a help level is built with the help block and v7's RW rule, on every variant", () => {
     const base = buildGoldenEnvelope({
       surface: "review",
       isPostSubmit: false,
@@ -104,9 +110,27 @@ describe("the default prompt is lisa-default-v6 (Karl, 2026-11-11)", () => {
         submit_state: "pre_submit",
         worked_step: { index: 2, final: false },
       });
-      // v6's block (v1–v5 never render it), on v5's data-boundary line.
+      // The help block (v1–v5 never render it), on v5's data-boundary line.
       expect(instruction).toContain("[HELP LEVEL]");
       expect(instruction).toContain(DATA_BLOCK_OPEN_PREFIX);
+      // A Math item: no RW rule.
+      expect(instruction).not.toContain(RW_WORKED_STEP_RULE);
+      // The same turn on a Reading & Writing item carries v7's rule (v6 never renders it).
+      const rw = buildSystemInstruction({
+        ...base,
+        policy_assignment: {
+          ...base.policy_assignment,
+          policy_variant: variant,
+        },
+        question_content:
+          base.question_content === null
+            ? null
+            : { ...base.question_content, section: "RW" },
+        help_level: "worked_step",
+        submit_state: "pre_submit",
+        worked_step: { index: 2, final: false },
+      });
+      expect(rw).toContain(RW_WORKED_STEP_RULE);
     }
   });
 

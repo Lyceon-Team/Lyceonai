@@ -483,3 +483,146 @@ describe("the guardian invite promises no skills (SCL-194)", () => {
     }
   });
 });
+
+/**
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 7; SCL-282;
+ *        contracts/notifications.contract.md §0.4, §0.5] | @implemented [2026-11-22]
+ *
+ * plain English: the guardian's invite to their teen is the fifth direct send. Its call site is
+ * wired, its key is derived from durable state and carries no address, and its body states what
+ * the guardian will see in the Privacy Policy v6 §5.1 words, carries the /join link, says how to
+ * ignore it, and escapes the name it was given.
+ */
+describe("the guardian's invite to their teen (SCL-282)", () => {
+  it("is wired at its call site, by import and by an awaited call", () => {
+    const root = path.resolve(__dirname, "../..");
+    const routes = fs.readFileSync(
+      path.join(root, "server/routes/guardian-invite-routes.ts"),
+      "utf8",
+    );
+    expect(routes).toMatch(
+      /import \{ sendGuardianTeenInviteEmail \} from "\.\.\/lib\/notifications\/direct-sends"/,
+    );
+    expect(routes).toMatch(/await sendGuardianTeenInviteEmail\(\{/);
+  });
+
+  it("keys on the invite and its token's issue time, never an address or the token", async () => {
+    const { guardianTeenInviteIdempotencyKey } =
+      await import("../../server/lib/notifications/direct-sends");
+    const key = guardianTeenInviteIdempotencyKey({
+      inviteId: "0b0e6f9e-2f7a-4d77-9c11-2d6d5c1f0a01",
+      tokenIssuedAt: "2026-11-22T00:00:00.000Z",
+    });
+    expect(key).toBe(
+      "guardian-teen-invite:0b0e6f9e-2f7a-4d77-9c11-2d6d5c1f0a01:2026-11-22T00:00:00.000Z",
+    );
+    expect(key).not.toContain("@");
+  });
+
+  it("states what the guardian will and will not see, links /join, and escapes the name", async () => {
+    const { guardianTeenInviteEmail } =
+      await import("../../server/lib/notifications/templates/guardian-teen-invite");
+    const email = guardianTeenInviteEmail({
+      guardianFirstName: "<b>Robin</b>",
+      joinUrl:
+        "https://lyceon.example/join/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      expiresAt: "2026-12-06T00:00:00.000Z",
+    });
+    for (const part of [email.text, email.html]) {
+      expect(part).toContain("mastery for each subject area");
+      expect(part).toContain("full-length practice test");
+      // The HTML part escapes the apostrophe.
+      expect(part).toMatch(
+        /won('|&#39;|&#x27;|&apos;)t see skill-level detail, your answers/,
+      );
+      expect(part).toContain("/join/AAAA");
+      expect(part).toContain("ignore this email");
+      expect(part).not.toMatch(/\$\d|price|per month/i);
+    }
+    expect(email.html).not.toContain("<b>Robin</b>");
+    expect(email.html).toContain("&lt;b&gt;Robin&lt;/b&gt;");
+  });
+});
+
+describe("the card on file: the guardian's three charge emails (SCL-286)", () => {
+  const INVITE = "0b0e6f9e-2f7a-4d77-9c11-2d6d5c1f0a01";
+  const STUDENT = "d1111111-1111-4111-8111-111111111111";
+
+  it("is wired at its call site: every outcome reaches its send", () => {
+    const root = path.resolve(__dirname, "../..");
+    const lib = fs.readFileSync(
+      path.join(root, "server/lib/guardian-invite-card.ts"),
+      "utf8",
+    );
+    for (const fn of [
+      "sendGuardianInviteChargedEmail",
+      "sendGuardianInviteChargeFailedEmail",
+      "sendGuardianInviteAlreadyFundedEmail",
+    ]) {
+      expect(lib).toContain(`await ${fn}(`);
+    }
+  });
+
+  it("charged: the ruled subject, one send keyed on the invite, no address in the key", async () => {
+    const { sendGuardianInviteChargedEmail } =
+      await import("../../server/lib/notifications/direct-sends");
+    const { requests, transport } = fakeResend("ok");
+    const sent = await sendGuardianInviteChargedEmail(
+      {
+        inviteId: INVITE,
+        email: "parent@example.test",
+        recipientProfileId: "c1111111-1111-4111-8111-111111111111",
+      },
+      { transport, siteUrl: SITE },
+    );
+    expect(sent.ok).toBe(true);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.body.subject).toBe("Your teen joined. Pro is on.");
+    const key = requests[0]!.headers["Idempotency-Key"];
+    expect(key).toBe(`guardian-invite-charged:${INVITE}`);
+    expect(key).not.toContain("@");
+  });
+
+  it("payment failed: the ruled subject, and a link to today's checkout for that student", async () => {
+    const { sendGuardianInviteChargeFailedEmail } =
+      await import("../../server/lib/notifications/direct-sends");
+    const { requests, transport } = fakeResend("ok");
+    await sendGuardianInviteChargeFailedEmail(
+      {
+        inviteId: INVITE,
+        studentProfileId: STUDENT,
+        email: "parent@example.test",
+        recipientProfileId: "c1111111-1111-4111-8111-111111111111",
+      },
+      { transport, siteUrl: SITE },
+    );
+    expect(requests[0]!.body.subject).toBe("Payment didn't go through");
+    const link = `${SITE}/guardian/students?choose=${STUDENT}`;
+    expect(String(requests[0]!.body.text)).toContain(link);
+    expect(String(requests[0]!.body.html)).toContain(link);
+    expect(String(requests[0]!.body.text)).toContain("nothing was charged");
+    expect(requests[0]!.headers["Idempotency-Key"]).toBe(
+      `guardian-invite-charge-failed:${INVITE}`,
+    );
+  });
+
+  it("already funded: says no charge was made", async () => {
+    const { sendGuardianInviteAlreadyFundedEmail } =
+      await import("../../server/lib/notifications/direct-sends");
+    const { requests, transport } = fakeResend("ok");
+    await sendGuardianInviteAlreadyFundedEmail(
+      {
+        inviteId: INVITE,
+        email: "parent@example.test",
+        recipientProfileId: "c1111111-1111-4111-8111-111111111111",
+      },
+      { transport, siteUrl: SITE },
+    );
+    expect(String(requests[0]!.body.text)).toContain(
+      "we did not charge the card you saved",
+    );
+    expect(requests[0]!.headers["Idempotency-Key"]).toBe(
+      `guardian-invite-already-funded:${INVITE}`,
+    );
+  });
+});

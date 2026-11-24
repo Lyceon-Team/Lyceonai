@@ -35,6 +35,7 @@ function readCode(filePath: string): string {
 }
 
 const HOME = "client/src/pages/home.tsx";
+const FREE_TIER = "client/src/lib/free-tier.ts";
 const META = "shared/seo/public-meta.ts";
 /**
  * Where "What is free vs paid?" lives since SEO Wave 3 (2026-10-05): the /digital-sat FAQ moved,
@@ -107,8 +108,10 @@ describe("free-tier claims agree across every public surface", () => {
    * because a literal in the test is a THIRD copy of the same fact.
    */
   it("quotes the same daily practice allowance in the page and the FAQ metadata", () => {
-    const home = read(HOME);
-    const declaration = home.match(
+    // The constant moved to lib/free-tier.ts (2026-11-22) so home and /parent share it; the
+    // homepage must still import it rather than restating the number.
+    expect(read(HOME)).toContain('import { FREE_DAILY_PRACTICE_QUESTIONS } from "@/lib/free-tier";');
+    const declaration = read(FREE_TIER).match(
       /const FREE_DAILY_PRACTICE_QUESTIONS = (\d+);/,
     );
     expect(declaration).not.toBeNull();
