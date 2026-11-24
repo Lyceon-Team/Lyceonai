@@ -35,6 +35,12 @@ import { GUARDIAN_STUDENTS_QUERY_KEY } from "@/hooks/useGuardianStudents";
 import { redeemLinkCodeResponseSchema } from "@lyceon/shared/student-link-code-schema";
 import { guardianPaths } from "./paths";
 
+import {
+  type BirthdayParts,
+  EMPTY_BIRTHDAY,
+  resolveBirthday,
+} from "@lyceon/shared/birthday";
+import { BirthdayFields } from "@/components/profile/BirthdayFields";
 const RATE_LIMIT_COPY =
   "Too many attempts. Please wait 15 minutes before trying again.";
 const DATE_OF_BIRTH_REQUIRED = "GUARDIAN_DATE_OF_BIRTH_REQUIRED";
@@ -88,7 +94,9 @@ export function AddStudentDialog({
   const [code, setCode] = useState(initialCode);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [needsDateOfBirth, setNeedsDateOfBirth] = useState(false);
-  const [dateOfBirth, setDateOfBirth] = useState("");
+  // Three fields since 2026-11-04; the ISO date is derived, never typed.
+  const [birthday, setBirthday] = useState<BirthdayParts>(EMPTY_BIRTHDAY);
+  const [dobSubmitAttempted, setDobSubmitAttempted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const normalised = code.replace(/\s+/g, "").toUpperCase();
@@ -133,7 +141,13 @@ export function AddStudentDialog({
       return;
     }
     if (needsDateOfBirth) {
-      if (dateOfBirth) dob.mutate(dateOfBirth);
+      // Only a real, plausible, past date is sent — the same judge the server runs.
+      const resolved = resolveBirthday(birthday, new Date());
+      if (!resolved.ok) {
+        setDobSubmitAttempted(true);
+        return;
+      }
+      dob.mutate(resolved.iso);
       return;
     }
     link.mutate(normalised);
@@ -171,20 +185,21 @@ export function AddStudentDialog({
           </div>
           {needsDateOfBirth && (
             <div className="flex flex-col gap-2" data-testid="add-student-dob">
-              <Label htmlFor="add-student-dob-input" className="text-base">
-                Your date of birth
-              </Label>
+              <Label className="text-base">Your date of birth</Label>
               <p className="text-base text-muted-foreground">
                 We need this once before you link a student.
               </p>
-              <Input
-                id="add-student-dob-input"
-                data-testid="add-student-dob-input"
-                type="date"
-                value={dateOfBirth}
-                onChange={(e) => setDateOfBirth(e.target.value)}
-                required
-                className="text-base"
+              {/*
+               * The same three-field component the onboarding step uses (owner, 2026-11-04),
+               * on the `default` variant: this dialog portals onto <body> with no `.lyc` root,
+               * so the student tokens would not resolve here.
+               */}
+              <BirthdayFields
+                value={birthday}
+                onChange={setBirthday}
+                showAllErrors={dobSubmitAttempted}
+                variant="default"
+                disabled={pending}
               />
             </div>
           )}

@@ -5,11 +5,14 @@
  *       2026-10-28) item 2: "at sign-up, store one coarse `signup_channel` on the profile from the
  *       landing URL's UTM (`reddit`, `tiktok`, `instagram`, `facebook`, `email`, `direct`, `other`)
  *       plus `signup_campaign` (e.g. `dec_cohort`, `qotd`), first touch only, allowlisted values,
- *       no raw URL. It must work without the analytics cookie."; Public Disclosure Doctrine rule 2
- *       (nothing proprietary) and rule 7 (under-13 excluded)] | @implemented [2026-10-28]
+ *       no raw URL. It must work without the analytics cookie."; Karl, 2026-11-14: "YouTube on the
+ *       sign-up attribution allowlist: yes, add it (and `x`, as ruled earlier)", so YouTube Shorts
+ *       and X sign-ups are credited to their channel, not `other`; Public Disclosure Doctrine rule
+ *       2 (nothing proprietary) and rule 7 (under-13 excluded)]
+ *       | @implemented [2026-10-28, youtube and x 2026-11-14]
  *
  * plain English: the landing URL's `utm_source` (and `utm_medium` for email) is reduced to one of
- * seven channels, and `utm_campaign` is kept only when it is a name on SIGNUP_CAMPAIGNS. Nothing
+ * nine channels, and `utm_campaign` is kept only when it is a name on SIGNUP_CAMPAIGNS. Nothing
  * else of the URL survives. The browser holds the result in memory and, to survive a full page
  * load on the way to sign-up without storing anything on the device, carries it on the link into
  * sign-up as two short parameters (SIGNUP_CHANNEL_PARAM, SIGNUP_CAMPAIGN_PARAM). A carried value
@@ -28,6 +31,8 @@ export const SIGNUP_CHANNELS = [
   "tiktok",
   "instagram",
   "facebook",
+  "youtube",
+  "x",
   "email",
   "direct",
   "other",
@@ -77,6 +82,13 @@ const SOURCE_CHANNEL: ReadonlyMap<string, SignupChannel> = new Map(
     "facebook.com": "facebook",
     fb: "facebook",
     meta: "facebook",
+    youtube: "youtube",
+    "youtube.com": "youtube",
+    yt: "youtube",
+    x: "x",
+    "x.com": "x",
+    twitter: "x",
+    "twitter.com": "x",
     email: "email",
     newsletter: "email",
     resend: "email",

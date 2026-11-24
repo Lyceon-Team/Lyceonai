@@ -62,7 +62,15 @@ PY
 }
 
 TEST=tests/ci/qotd-breakdown.test.ts
-ts_check() { pnpm exec vitest run "$TEST" 2>&1; }
+# Only the plants aimed at the two ffmpeg round trips (B23, B24) run them (~19 s of a ~21 s run);
+# every other plant runs the file without them, and the baseline proves the filter skips exactly
+# those two (scripts/ci/lib/vitest-round-trips.sh; CI wall-time ruling, Karl 2026-11-04).
+source "$ROOT/scripts/ci/lib/vitest-round-trips.sh"
+RT_FILES=("$TEST")
+RT_TITLES=(
+  "the video is the limited mix: at most -1 dBTP, and the MP4 check passes"
+  "a mix the limiter did not bring down is refused by the finished-mix check"
+)
 
 # expect_red <name> <expected substring> <output> <rc>
 expect_red() {
@@ -76,7 +84,7 @@ expect_red() {
 # ts_plant <name> <file> <old> <new> <expected>
 ts_plant() {
   plant "$2" "$3" "$4" || { bad "$1 STALE"; restore; return; }
-  OUT="$(ts_check)"; RC=$?
+  OUT="$(rt_check_for "$5")"; RC=$?
   expect_red "$1" "$5" "$OUT" "$RC"
   restore
 }
@@ -118,8 +126,9 @@ sql_plant() {
 }
 
 echo "=== (0) GREEN BASELINE ==="
-OUT="$(ts_check)"; RC=$?
+OUT="$(rt_check_full)"; RC=$?
 [ "$RC" = 0 ] && ok "breakdown tests green" || { bad "breakdown tests not green"; echo "$OUT" | tail -30; }
+rt_baseline ok bad
 # B23 and B24 run a real ffmpeg round trip; without ffmpeg those tests skip and the plants could
 # not bite, so a missing ffmpeg fails the baseline (a skip is not a pass), as in
 # worked-examples.mutations.sh.
@@ -188,7 +197,7 @@ ts_plant "B10 no approval asked (any script on social renders)" scripts/qotd-soc
   "  if (!approved.ok)" "  if (false)" \
   "a script Karl did not merge is no_approved_script"
 ts_plant "B11 the worked examples' script rules not run at render" scripts/qotd-social/breakdown.ts \
-  "  const content = scriptProblems(script, question);" "  const content: string[] = [];" \
+  "  const content = [...scriptProblems(script, question), ...(go ? [go] : [])];" "  const content: string[] = [];" \
   "a setup that reads the question aloud is content_rules (S1)"
 ts_plant "B12 the committed voice not checked against its text (result discarded)" scripts/qotd-social/check-breakdown-scripts.ts \
   "    problems.push(
@@ -204,10 +213,16 @@ ts_plant "B14 a grid-in let through (rule c)" shared/qotd/breakdown.ts \
   "a grid-in, a long passage, a paired passage"
 
 echo "=== captions, window, workflow ==="
-ts_plant "B15 the music credit dropped from the TikTok caption (CC BY 4.0)" shared/qotd/breakdown.ts \
-  "  const caption = socialTiktokCaption(headline, test, section, [musicCredit]);" \
-  "  const caption = socialTiktokCaption(headline, test, section, []);" \
-  "each caption is the canonical builder's output with the credit last"
+# B15 re-pointed 2026-11-04 (Karl, the #social copy-paste cleanup): the credit is on the end card,
+# so the plant now puts it back into the caption.
+ts_plant "B15 the music credit planted back into the TikTok caption" shared/qotd/breakdown.ts \
+  "  const caption = socialTiktokCaption(headline, test, section);" \
+  '  const caption = `${socialTiktokCaption(headline, test, section)}\n\nMusic: "Happy Beats" by ende.app (CC BY 4.0)`;' \
+  "each caption is the canonical builder's output, with no music credit"
+# B30 per Karl's ruling of 2026-11-05: authored breakdown scripts use Hard questions only.
+ts_plant "B30 an authored script not held to Hard questions" scripts/qotd-social/check-breakdown-scripts.ts \
+  "  if (hard) out.push(hard);" "" \
+  "a script whose question is not Hard is refused"
 ts_plant "B18 the pilot dates moved off Karl's ruling" shared/qotd/breakdown.ts \
   '  qotdBreakdownPilotSchema.parse({ start: "2026-11-09", end: "2026-11-22" });' \
   '  qotdBreakdownPilotSchema.parse({ start: "2026-11-08", end: "2026-11-21" });' \
@@ -215,6 +230,10 @@ ts_plant "B18 the pilot dates moved off Karl's ruling" shared/qotd/breakdown.ts 
 ts_plant "B19 the pilot never ends" shared/qotd/breakdown.ts \
   '  if (postedOn > pilot.end) return "ended";' "" \
   "is set to Karl's dates, posting days, 14 inclusive"
+ts_plant "B29 the hold lifted (the live window set while Karl holds the pilot, 2026-11-03)" shared/qotd/breakdown.ts \
+  '  qotdBreakdownPilotSchema.parse({ start: null, end: null });' \
+  '  qotdBreakdownPilotSchema.parse({ start: "2026-11-09", end: "2026-11-22" });' \
+  "held: the live window is off"
 ts_plant "B20 the breakdown blocks the QOTD (inside its job)" .github/workflows/qotd-social.yml \
   "    needs: assets"$'\n'"    if: always()" "    needs: assets" \
   "runs after the QOTD job, whatever its result"

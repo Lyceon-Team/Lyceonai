@@ -51,6 +51,43 @@ export const memorySummarySchema = z.object({
   source_window_end: z.string().nullable(),
 });
 
+/**
+ * @spec [Doc-03A_V3 §10.2 (chat_compaction content_json); closure plan W4-16]
+ *       | @implemented [2026-11-08]
+ * plain English: what `tutor_memory_summaries.content_json` holds for a `chat_compaction` row.
+ * The server's compaction writes it (server/services/tutor-compaction.ts) and the worker's
+ * memory block reads it (render-state-blocks.ts), so it lives here, once. It was declared in the
+ * server alone, which is how the worker came to read a `text` field no writer produces (W4-16).
+ */
+export const CHAT_COMPACTION_LIMITS = {
+  keyInsights: 5,
+  unresolvedConfusion: 5,
+  topicsDiscussed: 10,
+  entryLength: 200,
+} as const;
+
+const boundedCompactionList = (maxItems: number) =>
+  z.array(z.string().max(CHAT_COMPACTION_LIMITS.entryLength)).max(maxItems);
+
+export const chatCompactionContentSchema = z.object({
+  summary_version: z.literal("1.0"),
+  conversation_id: z.string().uuid(),
+  source_window_start: z.string(),
+  source_window_end: z.string(),
+  turns_compacted: z.number().int().nonnegative(),
+  topics_discussed: boundedCompactionList(
+    CHAT_COMPACTION_LIMITS.topicsDiscussed,
+  ),
+  skills_referenced: z.array(z.string()),
+  key_insights: boundedCompactionList(CHAT_COMPACTION_LIMITS.keyInsights),
+  unresolved_confusion: boundedCompactionList(
+    CHAT_COMPACTION_LIMITS.unresolvedConfusion,
+  ),
+  last_student_direction: z.string().nullable(),
+});
+
+export type ChatCompactionContent = z.infer<typeof chatCompactionContentSchema>;
+
 export const policyAssignmentSchema = z.object({
   policy_family: z.string(),
   policy_variant: z.string(),
@@ -303,6 +340,20 @@ export const ORCHESTRATE_INTENTS = [
   "step_stuck",
 ] as const;
 
+/**
+ * The help levels and submit states (packages/shared/src/tutor-help-level.ts `HELP_LEVELS`,
+ * `SUBMIT_STATES`), repeated here because the worker cannot import packages/shared; a CI test
+ * asserts the lists are equal. `MAX_WORKED_STEPS` likewise.
+ */
+export const ORCHESTRATE_HELP_LEVELS = [
+  "ask",
+  "hint",
+  "worked_step",
+  "full_solution",
+] as const;
+export const ORCHESTRATE_SUBMIT_STATES = ["pre_submit", "post_submit"] as const;
+export const ORCHESTRATE_MAX_WORKED_STEPS = 3;
+
 // ── Request schema ───────────────────────────────────────────────────
 
 export const orchestrateRequestSchema = z.object({
@@ -364,6 +415,22 @@ export const orchestrateRequestSchema = z.object({
   // is the student's message). Optional, so a turn without it is unchanged. A VALUE the worker
   // does not know fails its parse, so a new intent ships worker first (deploy order, SCL-268).
   intent: z.enum(ORCHESTRATE_INTENTS).optional(),
+  // ── Help level (owner brief "Help-level engine", Karl 2026-11-05; SCL-275) ──
+  // How much help LISA gives on this turn, decided by the BFF with no model call
+  // (packages/shared/src/tutor-help-level.ts): `ask` 1, `hint` 2, `worked_step` 3, `full_solution`
+  // 4; never above 3 before submission. `worked_step` is which worked step (1–3) at level 3, and
+  // `final` marks the last one allowed before submission. Optional, so the worker deploys first:
+  // an older BFF never sends them, and the prompt then carries no help rule.
+  help_level: z.enum(ORCHESTRATE_HELP_LEVELS).optional(),
+  submit_state: z.enum(ORCHESTRATE_SUBMIT_STATES).optional(),
+  worked_step: z
+    .object({
+      index: z.number().int().min(1).max(ORCHESTRATE_MAX_WORKED_STEPS),
+      final: z.boolean(),
+    })
+    .strict()
+    .nullable()
+    .optional(),
 });
 
 // ── Response sub-schemas ─────────────────────────────────────────────

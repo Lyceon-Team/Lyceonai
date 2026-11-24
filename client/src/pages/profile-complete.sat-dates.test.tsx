@@ -97,6 +97,10 @@ vi.mock("@/lib/queryClient", async () => {
 import ProfileComplete from "./profile-complete";
 import { queryClient as moduleClient } from "@/lib/queryClient";
 
+import {
+  birthdayFields,
+  enterBirthday,
+} from "@/components/profile/__tests__/enter-birthday";
 function yearsAgo(years: number): string {
   const d = new Date();
   d.setFullYear(d.getFullYear() - years);
@@ -136,9 +140,7 @@ describe("onboarding: a guardian-intent account that switches to Student sees th
     fireEvent.change(screen.getByTestId("input-display-name"), {
       target: { value: "Sam" },
     });
-    fireEvent.change(screen.getByTestId("input-date-of-birth"), {
-      target: { value: yearsAgo(16) },
-    });
+    enterBirthday(yearsAgo(16));
     await screen.findByTestId("onboarding-sat-dates-trigger");
 
     const offered = await waitForSatDates("onboarding-sat-dates");
@@ -181,17 +183,21 @@ describe("first-run P1: the date of birth starts empty", () => {
 
   it("opens empty; the SAT question appears only once a 13+ date is entered", async () => {
     await asStudent();
-    const dob = screen.getByTestId("input-date-of-birth") as HTMLInputElement;
-    expect(dob.value).toBe("");
+    // All THREE fields open empty — nothing pre-filled, no placeholder submitted
+    // (owner brief 2026-11-04).
+    const fields = birthdayFields();
+    expect(fields.month.value).toBe("");
+    expect(fields.day.value).toBe("");
+    expect(fields.year.value).toBe("");
     expect(screen.queryByText(/Age detected/)).toBeNull();
     expect(screen.queryByTestId("text-under-13-next-step")).toBeNull();
     expect(screen.queryByTestId("onboarding-sat-dates-trigger")).toBeNull();
 
-    fireEvent.change(dob, { target: { value: yearsAgo(12) } });
+    enterBirthday(yearsAgo(12));
     expect(await screen.findByTestId("text-under-13-next-step")).toBeTruthy();
     expect(screen.queryByTestId("onboarding-sat-dates-trigger")).toBeNull();
 
-    fireEvent.change(dob, { target: { value: yearsAgo(16) } });
+    enterBirthday(yearsAgo(16));
     expect(
       await screen.findByTestId("onboarding-sat-dates-trigger"),
     ).toBeTruthy();
@@ -200,16 +206,25 @@ describe("first-run P1: the date of birth starts empty", () => {
 
   it("submitting with no date asks for one and sends nothing", async () => {
     await asStudent();
-    const dob = screen.getByTestId("input-date-of-birth") as HTMLInputElement;
-    // The field is required: the browser asks for it before the form submits.
-    expect(dob.required).toBe(true);
-    expect(dob.validity.valueMissing).toBe(true);
-    fireEvent.click(screen.getByTestId("button-complete-profile"));
-    // A submit that gets past the browser meets the page's own check.
-    fireEvent.submit(dob.form as HTMLFormElement);
+    const fields = birthdayFields();
+    expect(fields.year.value).toBe("");
+    // The page's own check, not the browser's: the three fields carry no `required`
+    // attribute, so nothing rests on native form validation (which is what the old
+    // single `type="date"` field relied on).
+    fireEvent.submit(fields.year.form as HTMLFormElement);
     expect(
-      await screen.findByText("Please enter your date of birth to continue."),
+      await screen.findByText("Please check your date of birth to continue."),
     ).toBeTruthy();
+    // And each field says what it needs.
+    expect(screen.getByTestId("error-birth-month").textContent).toBe(
+      "Choose your birth month.",
+    );
+    expect(screen.getByTestId("error-birth-day").textContent).toBe(
+      "Enter your birth day.",
+    );
+    expect(screen.getByTestId("error-birth-year").textContent).toBe(
+      "Enter your birth year.",
+    );
     expect(calls.urls.filter((u) => u.startsWith("/api/profile"))).toEqual([]);
   });
 });

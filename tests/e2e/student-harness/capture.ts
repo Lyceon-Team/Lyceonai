@@ -1269,6 +1269,13 @@ async function shootBuilt(
         await settleAfterStep();
         continue;
       }
+      if ("select" in step) {
+        const field = step.select[viewport];
+        if (field === null) continue;
+        await page.locator(field).first().selectOption(step.option);
+        await settleAfterStep();
+        continue;
+      }
       if ("fill" in step) {
         const field = step.fill[viewport];
         if (field === null) continue;
@@ -1628,11 +1635,13 @@ function writeIndex(
       lines.push(
         "pick" in step
           ? `Step: pick the ${step.pick} choice (resolved from the served item's stored order in the harness database).`
-          : "fill" in step
-            ? `Step: type \`${step.value}\` into \`${JSON.stringify(step.fill)}\`.`
-            : "focus" in step
-              ? `Step: focus \`${JSON.stringify(step.focus)}\` (no typing).`
-              : `Step: click \`${JSON.stringify(step.click)}\`${step.ariaDisabledOk === true ? " (aria-disabled but clickable: forced once visible)" : ""}.`,
+          : "select" in step
+            ? `Step: choose \`${step.option}\` in \`${JSON.stringify(step.select)}\`.`
+            : "fill" in step
+              ? `Step: type \`${step.value}\` into \`${JSON.stringify(step.fill)}\`.`
+              : "focus" in step
+                ? `Step: focus \`${JSON.stringify(step.focus)}\` (no typing).`
+                : `Step: click \`${JSON.stringify(step.click)}\`${step.ariaDisabledOk === true ? " (aria-disabled but clickable: forced once visible)" : ""}.`,
       );
     if (shot.expectText !== undefined)
       lines.push(

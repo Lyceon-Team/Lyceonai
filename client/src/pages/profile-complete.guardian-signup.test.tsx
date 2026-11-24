@@ -96,6 +96,7 @@ vi.mock("@/lib/queryClient", async () => {
 import ProfileComplete from "./profile-complete";
 import { queryClient as moduleClient } from "@/lib/queryClient";
 
+import { enterBirthday } from "@/components/profile/__tests__/enter-birthday";
 // Radix Select needs these in jsdom.
 beforeEach(() => {
   const proto = Element.prototype as unknown as Record<string, unknown>;
@@ -127,9 +128,7 @@ async function renderAndChooseGuardian(): Promise<void> {
   fireEvent.change(screen.getByTestId("input-display-name"), {
     target: { value: "Pat Parent" },
   });
-  fireEvent.change(screen.getByTestId("input-date-of-birth"), {
-    target: { value: "1980-05-01" },
-  });
+  enterBirthday("1980-05-01");
 }
 
 describe("G1-02 guardian sign-up on /profile/complete", () => {
@@ -238,9 +237,7 @@ describe("F13 guardian intent from the homepage", () => {
       target: { value: "Sam Student" },
     });
     // First-run P1 (2026-10-13): the date of birth starts empty, so the student enters one.
-    fireEvent.change(screen.getByTestId("input-date-of-birth"), {
-      target: { value: "2010-01-01" },
-    });
+    enterBirthday("2010-01-01");
     await act(async () => {
       fireEvent.click(screen.getByTestId("button-complete-profile"));
     });

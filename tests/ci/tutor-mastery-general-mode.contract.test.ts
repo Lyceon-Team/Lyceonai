@@ -21,6 +21,7 @@
  * — which the deployed worker already renders — on the instruction.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { renderDataBlock } from "../../shared/tutor-safety-constants";
 import { FakeTutorDb } from "../helpers/fake-tutor-db";
 
 const db = { current: new FakeTutorDb() };
@@ -119,11 +120,12 @@ describe("W3-4b — mastery reaches the system instruction in general mode", () 
     const instruction = buildSystemInstruction(generalRequest(learning));
     expect(instruction).toContain("--- CONTEXT FOR CURRENT QUESTION ---");
     expect(instruction).toContain(
-      "They have had difficulty with these skills in the past 7 days: Linear Equations in One Variable.",
+      // The default (v5, 2026-11-11) renders each value as a data block.
+      `They have had difficulty with these skills in the past 7 days: ${renderDataBlock("mastery.skills_with_fails_7d", "Linear Equations in One Variable")}.`,
     );
     // The domain bands — as bands, never the raw score (Doc 03D §7.1).
     expect(instruction).toContain(
-      `[MASTERY] Their domain mastery across the SAT: Advanced Math (Math): "proficient"; Algebra (Math): "needs_work".`,
+      `[MASTERY] Their domain mastery across the SAT: ${renderDataBlock("mastery.domains", `Advanced Math (Math): "proficient"; Algebra (Math): "needs_work"`)}.`,
     );
     expect(instruction).not.toContain("0.62");
     expect(instruction).not.toContain("0.31");

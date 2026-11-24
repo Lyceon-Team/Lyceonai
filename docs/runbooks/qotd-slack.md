@@ -63,6 +63,10 @@ warning "SAT date list needs updating". Add the next College Board dates to
 - The TikTok **bio link**: `lyceon.ai/start?utm_source=tiktok&utm_campaign=qotd`.
 - The **link to send to people who comment SAT** on Instagram:
   `lyceon.ai/start?utm_source=instagram&utm_campaign=qotd`.
+- The **X founder link** (Karl, 2026-11-16), at most one per thread, in its last post:
+  `https://lyceon.ai/start?utm_source=x&utm_medium=social&utm_campaign=founder`. Sign-ups record
+  `signup_channel` `x` (SCL-278); `founder` is not on the campaign allowlist, so the campaign is
+  recorded as none until it is added.
 - The **alt text** goes with the image upload in Slack, not in the message.
 
 Every link points at `lyceon.ai/start` and is tagged with its channel and campaign, so each sign-up
@@ -201,9 +205,13 @@ goes first and nothing here can block or delay it.
 that a day's breakdown was already posted: a re-run of the `breakdown` job sends its Slack set a
 second time. Re-run it only for a failed post.
 
-**Dates.** `QOTD_BREAKDOWN_PILOT` (`shared/qotd/breakdown.ts`): posting days **2026-11-09 to
-2026-11-22**, both inclusive (14 days, the schema's limit). On a posting day the run breaks down the
-QOTD of the day before, so the QOTD dates covered are **2026-11-08 to 2026-11-21**.
+**Dates.** **HELD (Karl, 2026-11-03):** the live window `QOTD_BREAKDOWN_PILOT`
+(`shared/qotd/breakdown.ts`) is off (no dates) until the private repo exists, so nothing builds or
+posts, and no "no approved script" notice reaches #social. The code stays merged. To un-pause, a
+one-line PR sets the dates Karl gives. The ruled window is kept as `QOTD_BREAKDOWN_PILOT_RULED`:
+posting days **2026-11-09 to 2026-11-22**, both inclusive (14 days, the schema's limit). On a
+posting day the run breaks down the QOTD of the day before, so those QOTD dates were **2026-11-08
+to 2026-11-21**.
 
 **What posts.** Inside the window, yesterday's QOTD as a 30-60 s video, built with the
 worked-example pipeline from the **authored script Karl merged for that date**
@@ -215,8 +223,10 @@ answer is named by the stored `correct_display_letter`, never the question's ori
 letter. The voice is Kokoro `am_michael`, committed with the script; nothing is voiced at render
 time and the job sets up no Python. The finished mix is limited to at most −1 dBTP true peak
 (SCL-270, the worked examples' `final-mix.ts`) before the MP4 check. It goes to the same channel (`SOCIAL_SLACK_CHANNEL_ID`) as the
-TikTok, Instagram and Facebook set: the video with its label and review line, the TikTok caption and
-keywords, then the Instagram and Facebook captions (SCL-262 format, music credit last). **Karl
+TikTok, Instagram and Facebook set: the video with the header "*TikTok*", the TikTok caption and
+keywords, then "*Instagram*" and "*Facebook*" with their captions (SCL-262 format). No label, review
+line or music credit in any copy block; the credit is on the video's end card (Karl, 2026-11-04,
+SCL-273). **Karl
 posts by hand.** Nothing is published automatically, and nothing posts anywhere but #social.
 
 ### 6.0 The private repo (Karl, 2026-11-03: set up by Thu 2026-11-05)

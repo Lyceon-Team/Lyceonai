@@ -48,6 +48,16 @@
  *    The miss is logged as ids only: the question, its sub-skills, the method.
  *  - The format priority is passed in from `VIDEO_FORMAT_PRIORITY`, so the new statement holds
  *    no copy of the format vocabulary.
+ *
+ * @spec [owner brief "Phase C follow-up: show the segment, not the whole video", Karl
+ *       2026-11-04] | @implemented [2026-11-04]
+ *  - A served segment now carries its end: `end_seconds`, read from `video_segments` for the
+ *    returned segment ids in one extra statement (the retrieval function returns only the
+ *    start, and this change ships server and client only, with no migration). With it the
+ *    client action carries `segment_id`, so a "Watch full video" press can be recorded against
+ *    the segment it widened. Both are null on the skill path, where whole videos play as
+ *    before. Neither goes to the worker (`toWireVideos` is an explicit projection).
+ *  - An end that is missing or not after the start is null: that video plays as it did.
  */
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
@@ -79,6 +89,9 @@ export const libraryVideoSchema = z.object({
   start_seconds: z.number().int().nonnegative().nullable(),
   methods: z.array(videoMethodSchema),
   format: videoFormatSchema.nullable(),
+  // Set on the segment path only (below); the retrieval functions never return them.
+  end_seconds: z.number().int().positive().nullable().default(null),
+  segment_id: z.string().uuid().nullable().default(null),
 });
 export type LibraryVideo = z.infer<typeof libraryVideoSchema>;
 
@@ -200,9 +213,18 @@ export async function retrieveOfferedVideos(
       );
       return { ...NO_RETRIEVAL, path: "segment", miss: true };
     }
+    const ends = await segmentEnds(rows.map((row) => row.segment_id));
     return {
-      // Projected to the library row: the segment fields go to the timing line only.
-      videos: rows.map((row) => libraryVideoSchema.parse(row)),
+      // Projected to the library row, plus the segment's id and end (the player's window).
+      videos: rows.map((row) => {
+        const end = ends.get(row.segment_id);
+        return libraryVideoSchema.parse({
+          ...row,
+          segment_id: row.segment_id,
+          end_seconds:
+            end !== undefined && end > (row.start_seconds ?? 0) ? end : null,
+        });
+      }),
       path: "segment",
       matchedSubSkillIds: top.matched_sub_skills,
       sharedClusters: top.shared_clusters,
@@ -219,6 +241,29 @@ export async function retrieveOfferedVideos(
     );
     return NO_RETRIEVAL;
   }
+}
+
+const segmentEndRowsSchema = z.array(
+  z.object({
+    segment_id: z.string().uuid(),
+    end_seconds: z.number().int().positive(),
+  }),
+);
+
+/** Each segment's end, by id: one statement for the rows a retrieval returned. */
+async function segmentEnds(
+  segmentIds: readonly string[],
+): Promise<Map<string, number>> {
+  const r = await supabaseServer
+    .from("video_segments")
+    .select("segment_id, end_seconds")
+    .in("segment_id", [...segmentIds]);
+  if (r.error) throw r.error;
+  return new Map(
+    segmentEndRowsSchema
+      .parse(r.data ?? [])
+      .map((row) => [row.segment_id, row.end_seconds]),
+  );
 }
 
 /** The retrieval's half of the `video_retrieval` timing block (ids and counts only). */
@@ -252,14 +297,20 @@ type WorkerAction = OrchestrateResponse["response"]["suggested_action"];
 
 /** The client's action: the worker's, with the offered video attached for recommend_video. */
 /**
- * What the client is sent about a video: exactly these five fields (client/src/hooks/
- * tutor-client.ts `TutorVideo`). Projected, never the library row itself, so a field added to
+ * What the client is sent about a video: exactly these seven fields (client/src/hooks/
+ * tutor-client.ts `TutorVideo`); `end_seconds` and `segment_id` are null on the skill path. Projected, never the library row itself, so a field added to
  * `libraryVideoSchema` (methods and format, 2026-10-27) does not reach students unnoticed
  * (CLAUDE.md anti-leak chokepoint rule).
  */
 export type ClientVideo = Pick<
   LibraryVideo,
-  "video_id" | "title" | "channel_name" | "duration_seconds" | "start_seconds"
+  | "video_id"
+  | "title"
+  | "channel_name"
+  | "duration_seconds"
+  | "start_seconds"
+  | "end_seconds"
+  | "segment_id"
 >;
 
 export function toClientVideo(v: LibraryVideo): ClientVideo {
@@ -269,6 +320,8 @@ export function toClientVideo(v: LibraryVideo): ClientVideo {
     channel_name: v.channel_name,
     duration_seconds: v.duration_seconds,
     start_seconds: v.start_seconds,
+    end_seconds: v.end_seconds,
+    segment_id: v.segment_id,
   };
 }
 

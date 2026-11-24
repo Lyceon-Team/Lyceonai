@@ -160,6 +160,7 @@ vi.mock("@/lib/queryClient", async () => {
 import ProfileComplete from "./profile-complete";
 import { queryClient as moduleClient } from "@/lib/queryClient";
 
+import { enterBirthday } from "@/components/profile/__tests__/enter-birthday";
 function yearsAgo(years: number): string {
   const d = new Date();
   d.setFullYear(d.getFullYear() - years);
@@ -193,9 +194,7 @@ async function mountAsStudentOf16(): Promise<void> {
   fireEvent.change(await screen.findByTestId("input-display-name"), {
     target: { value: "Sam" },
   });
-  fireEvent.change(screen.getByTestId("input-date-of-birth"), {
-    target: { value: yearsAgo(16) },
-  });
+  enterBirthday(yearsAgo(16));
   await screen.findByTestId("onboarding-sat-dates-trigger");
 }
 

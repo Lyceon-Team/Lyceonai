@@ -46,6 +46,9 @@ export const RETURN_PATH_ROUTE_ROLES: Readonly<
   // server refuses admins too, so an admin is never landed there.
   "/guardian": ["guardian"],
   "/dashboard": ["student", "admin"],
+  // A teen claiming a guardian's invite (owner rulings 2026-11-21; SCL-282): /join/<token>
+  // rides through sign-up and onboarding as `next`. Students only: the claim is a student's.
+  "/join": ["student"],
   "/profile": ["student", "guardian", "admin"],
   "/practice": ["student", "admin"],
   "/review": ["student", "admin"],
@@ -140,6 +143,17 @@ export function sanitizeReturnPath(raw: unknown): string | null {
   if (matchingAllowlistEntry(pathname) === null) return null;
 
   return `${pathname}${parsed.search}`;
+}
+
+/**
+ * @spec [owner ruling 2026-11-21 (counsel-approved) 4; SCL-282] | @implemented [2026-11-22]
+ *
+ * plain English: is this return path a guardian's invite (/join/<token>)? An under-13 student
+ * with no guardian link is normally sent to /guardian-required ahead of any return path; an
+ * invite is the exception, because claiming it is how that student gets linked.
+ */
+export function isJoinReturnPath(next: string | null): boolean {
+  return next !== null && pathnameOf(next).startsWith("/join/");
 }
 
 /** The login URL that carries a return path, e.g. `/login?next=%2Fguardian%3Fcode%3DABC234`. */

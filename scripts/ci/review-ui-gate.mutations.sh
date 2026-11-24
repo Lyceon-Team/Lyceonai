@@ -99,6 +99,11 @@ FILES=(
   "client/src/components/ui/checkbox.tsx"
   "client/src/components/ui/select.tsx"
   "client/src/pages/profile-complete.tsx"
+  # The three-field birthday input the date of birth moved into (2026-11-04). It MUST be
+  # here: `snapshot_all` only copies files in this list and `restore_all` skips anything it
+  # did not snapshot, so a plant aimed at a file missing from it mutates the working tree
+  # and never puts it back — the next run then finds no anchor and reports a dead plant.
+  "client/src/components/profile/BirthdayFields.tsx"
   "client/src/pages/update-password.tsx"
   "client/src/pages/account-recover.tsx"
   "client/src/pages/guardian-required.tsx"
@@ -2145,10 +2150,16 @@ plant "UI59-C2" "a profile validation error is no longer an alert" \
 assert s.count(a) == 1
 s = s.replace(a, "            tone=\"neutral\"", 1)'
 
-plant "UI59-C3" "the date of birth loses autocomplete=bday" \
+# Re-pointed 2026-11-04, in the change that moved its target. The date of birth was one
+# `<input type="date" autoComplete="bday">` on profile-complete.tsx until the three-field
+# birthday input replaced it; this plant's anchor went with it, and the gate caught it as
+# "PLANT DID NOT APPLY (anchor missed)". A dead plant reads exactly like a passing one
+# (CLAUDE.md), so it is re-aimed at where the token lives now rather than deleted: the Year
+# field of BirthdayFields, whose `bday-year` the same UI-59 test asserts.
+plant "UI59-C3" "the date of birth loses autocomplete=bday-year" \
   "$B59" \
-  "client/src/pages/profile-complete.tsx" \
-  'a = "autoComplete=\"bday\""
+  "client/src/components/profile/BirthdayFields.tsx" \
+  'a = "autoComplete=\"bday-year\""
 assert s.count(a) == 1
 s = s.replace(a, "autoComplete=\"off\"", 1)'
 

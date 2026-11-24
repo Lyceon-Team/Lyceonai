@@ -317,3 +317,98 @@ export const billingStatusResponseSchema = z.object({
 });
 
 export type BillingStatus = z.infer<typeof billingStatusResponseSchema>;
+
+/**
+ * Cancellation contracts — what a client may send to, and receives from, the
+ * three cancellation routes.
+ *
+ * @spec [SCL-271 (cancellation at every status, never balance-gated; `past_due`
+ *        ends billing now and holds access to the grace deadline); SCL-272 (our
+ *        endpoint is the single self-service path; payer-only); Doc 01 V8 §21
+ *        status table; owner rulings 2026-11-03]
+ * | @implemented [2026-11-03]
+ *
+ * plain English: the client names WHICH subscription to cancel and nothing
+ * else. Expected outcome: every word the student or guardian reads about when
+ * access ends comes from the server, which computed it from Stripe. Trade-off:
+ * `subscriptionId` is caller-supplied, which is a selection and not a claim —
+ * the server re-resolves it against the caller's own Stripe customer before
+ * acting, so editing it in devtools changes what is REQUESTED, never what is
+ * permitted (the same distinction `checkoutRequestSchema` above rests on).
+ *
+ * edge case: `.strict()` rejects unknown keys, so a client cannot smuggle a
+ * decision, an access-end date, or a status for the server to trust.
+ */
+export const cancelRequestSchema = z
+  .object({
+    subscriptionId: z.string().min(1),
+  })
+  .strict();
+export type CancelRequest = z.infer<typeof cancelRequestSchema>;
+
+/**
+ * What the server decided to do, named rather than inferred from a status.
+ *
+ * `past_due_scheduled` is the state Doc 01 §21's table has no row for and
+ * SCL-271 adds: billing has ended (invoices voided, collection paused) while
+ * access continues to a deadline fixed before the payer asked.
+ */
+export const CANCELLATION_DECISIONS = [
+  "at_period_end",
+  "past_due_scheduled",
+  "immediate",
+  "already_scheduled",
+  "already_canceled",
+] as const;
+export const cancellationDecisionSchema = z.enum(CANCELLATION_DECISIONS);
+export type CancellationDecision = z.infer<typeof cancellationDecisionSchema>;
+
+/** One subscription the CALLER is the payer of, with what cancelling it would do. */
+export const cancellableSubscriptionSchema = z.object({
+  subscriptionId: z.string().min(1),
+  /** The student this subscription funds, for the guardian surface to label rows. */
+  studentProfileId: z.string().nullable(),
+  /** Stripe's own status, for display only — never the basis of a client decision. */
+  stripeStatus: z.string().min(1),
+  /** What cancelling WOULD do, computed server-side. */
+  decision: cancellationDecisionSchema,
+  /**
+   * When premium access ends if the payer cancels now, ISO-8601. Null only
+   * where the server cannot name a moment — an immediate cancellation of a
+   * subscription that never granted access.
+   */
+  accessEndsAt: z.string().nullable(),
+  /** Already scheduled to stop: either flag, as Stripe holds it. */
+  cancelAtPeriodEnd: z.boolean(),
+  cancelAt: z.string().nullable(),
+  /** A scheduled cancellation that has not yet taken effect can be undone. */
+  undoable: z.boolean(),
+});
+export type CancellableSubscription = z.infer<
+  typeof cancellableSubscriptionSchema
+>;
+
+export const cancelStateResponseSchema = z.object({
+  /** Empty when the caller is the payer of nothing — a student whose guardian pays. */
+  subscriptions: z.array(cancellableSubscriptionSchema),
+  requestId: z.string().optional(),
+});
+export type CancelStateResponse = z.infer<typeof cancelStateResponseSchema>;
+
+export const cancelResponseSchema = z.object({
+  subscriptionId: z.string().min(1),
+  decision: cancellationDecisionSchema,
+  accessEndsAt: z.string().nullable(),
+  /** True when this call changed nothing because the subscription was already stopping. */
+  alreadyStopping: z.boolean(),
+  requestId: z.string().optional(),
+});
+export type CancelResponse = z.infer<typeof cancelResponseSchema>;
+
+export const cancelUndoResponseSchema = z.object({
+  subscriptionId: z.string().min(1),
+  /** False when there was nothing scheduled to undo — not an error. */
+  restored: z.boolean(),
+  requestId: z.string().optional(),
+});
+export type CancelUndoResponse = z.infer<typeof cancelUndoResponseSchema>;

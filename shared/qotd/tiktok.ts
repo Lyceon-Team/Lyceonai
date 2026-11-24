@@ -12,8 +12,10 @@
  *     "Why". It refuses any day but the one before the posted day, so today's answer can never
  *     reach a slide, and it refuses a day whose served letter is not the letter slide 1 shows for
  *     that choice.
- *   * tiktokWhy: the explanation as plain text (the reveal's plainMathText), cut to the most
- *     whole sentences (at most three) that fit in 300 characters. When even the first sentence
+ *   * tiktokWhy: the explanation with its maths kept as written ($…$), so slide 3 typesets it
+ *     with the site's KaTeX (Karl, 2026-11-16: "Rendered slides/images: use the repo's KaTeX, so
+ *     exponents, fractions and roots render as maths"), cut to the most whole sentences (at most
+ *     three) whose visible text (plainMathText) fits in 300 characters; never split inside maths. When even the first sentence
  *     is longer, it is cut at the last word boundary that fits, followed by "…" and "Full
  *     explanation on lyceon.ai", so every day gets a carousel (Karl's ruling 2026-10-26 on
  *     #1308; until then such a day had no carousel, about 1.4% of the bank). The note-only
@@ -36,6 +38,7 @@ import {
   type QotdRevealAnswer,
   type QotdTiktokCarousel,
 } from "../../packages/shared/src/qotd-schema";
+import { tokenizeMathContent } from "../math/tokenize";
 import { plainMathText } from "./plain-math";
 import { QOTD_SECTION_NAME, socialInputFromArchive } from "./social";
 
@@ -90,6 +93,37 @@ function sentences(text: string): string[] {
   return ended.split(/(?<=[.!?]["”’)]*) /);
 }
 
+/** A Why's length as the viewer reads it: its maths as plain text. */
+export function visibleWhyLength(why: string): number {
+  return plainMathText(why).length;
+}
+
+/**
+ * The explanation as written, each maths token swapped for a placeholder that holds no space or
+ * sentence mark, so splitting and cutting never land inside maths; `restore` puts the maths back.
+ */
+function maskMaths(text: string): {
+  masked: string;
+  restore: (s: string) => string;
+} {
+  const maths: string[] = [];
+  let masked = "";
+  let at = 0;
+  for (const token of tokenizeMathContent(text)) {
+    if (token.type !== "math") continue;
+    masked += text.slice(at, token.rawStart);
+    masked += `\uE000${maths.length}\uE001`;
+    maths.push(text.slice(token.rawStart, token.rawEnd));
+    at = token.rawEnd;
+  }
+  masked += text.slice(at);
+  return {
+    masked,
+    restore: (s: string) =>
+      s.replace(/\uE000(\d+)\uE001/g, (_, k: string) => maths[Number(k)] ?? ""),
+  };
+}
+
 /** What follows a first sentence cut short (Karl, 2026-10-26). */
 export const QOTD_TIKTOK_WHY_MORE = "… Full explanation on lyceon.ai";
 
@@ -101,29 +135,37 @@ export const QOTD_TIKTOK_WHY_MORE = "… Full explanation on lyceon.ai";
  */
 function cutFirstSentence(sentence: string): string {
   const room = QOTD_TIKTOK_WHY_MAX - QOTD_TIKTOK_WHY_MORE.length;
-  const head = sentence.slice(0, room + 1);
-  const space = head.lastIndexOf(" ");
-  const cut = (
-    space > 0 ? head.slice(0, space) : sentence.slice(0, room)
-  ).replace(/[\s,;:—–-]+$/, "");
+  const { masked, restore } = maskMaths(sentence);
+  // The longest prefix ending before a space outside maths whose visible text fits the room.
+  let best: string | null = null;
+  for (let i = masked.indexOf(" "); i > 0; i = masked.indexOf(" ", i + 1)) {
+    const head = restore(masked.slice(0, i)).replace(/[\s,;:—–-]+$/, "");
+    if (visibleWhyLength(head) > room) break;
+    best = head;
+  }
+  // A single word longer than the room, which no explanation has: its visible text, cut.
+  const cut = best ?? plainMathText(sentence).slice(0, room);
   return `${cut}${QOTD_TIKTOK_WHY_MORE}`;
 }
 
 /**
- * The "Why:" line from the explanation in plain text, at most 300 characters: as many whole
+ * The "Why:" line from the explanation, its maths kept as written for KaTeX, at most 300
+ * visible characters: as many whole
  * sentences (at most three) as fit, or, when the first sentence alone is longer, that sentence
  * cut at a word boundary and pointed at the full explanation on lyceon.ai. Null only for an
  * empty explanation.
  */
 export function tiktokWhy(explanation: string): string | null {
-  const all = sentences(plainMathText(explanation));
+  const { masked, restore } = maskMaths(explanation);
+  const all = sentences(masked).map(restore);
   const first = all[0];
   if (first === undefined) return null;
-  if (first.length > QOTD_TIKTOK_WHY_MAX) return cutFirstSentence(first);
+  if (visibleWhyLength(first) > QOTD_TIKTOK_WHY_MAX)
+    return cutFirstSentence(first);
   let out = "";
   for (const sentence of all.slice(0, 3)) {
     const next = out === "" ? sentence : `${out} ${sentence}`;
-    if (next.length > QOTD_TIKTOK_WHY_MAX) break;
+    if (visibleWhyLength(next) > QOTD_TIKTOK_WHY_MAX) break;
     out = next;
   }
   return out;

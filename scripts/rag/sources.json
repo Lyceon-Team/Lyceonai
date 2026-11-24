@@ -598,5 +598,605 @@
     "label": "Dr. TestPrep (TIER 5, small channel: judge teaching quality, not just tags) — SAT.5.1.Basic: Area and Volume, page 88",
     "channel": "Dr. TestPrep",
     "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "iKc31gO-it4",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Area and Volume",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "Gz6oJJAZye4",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Center, Spread, and Shape of Distributions",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "pj4nCppTeZw",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Circle Equations",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "aH-_4K3Vl9Q",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Circle Theorems",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "rVuc8OGelUs",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Congruence, Similarity, and Angle Relationships",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "KT7hmSP74Xk",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Data Inferences",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "jSRkQBhOwl8",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Data Representations",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "tGQz6D-D4os",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Evaluating Statistical Claims",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "2WRE7JH8Seg",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Exponential Graphs",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "HEdGb53NTv0",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Factoring Quadratic and Polynomial Expressions",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "KP9pMDz0qhg",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Graphs of Linear Equations and Functions",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "rYBAIbGVDVg",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Graphs of Linear Systems and Inequalities",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "aK-fFtOGal0",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Isolating Quantities",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "ThBK41nv-I0",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Linear Equation Word Problems",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "jZhjQ3g63kg",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Linear Inequality Word Problems",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "NEd-CEh3U7Y",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Linear Relationship Word Problems",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "D9y4Z9h0rkg",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Linear and Exponential Growth",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "o1RgjrbhLwA",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Linear and Quadratic Systems",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "gFj6FUmL6No",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Non-linear functions",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "aDhs2BXFQUk",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Operations with Rational Expressions",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "2sP9rnTxbow",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Operations with polynomials",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "1MwEkA24_nw",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Percentages",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "jFhJ4nQ-YME",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Polynomial and Other Non-linear Graphs",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "pueKfLSw-xw",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Probability and Relative Frequency",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "rFzMMg1oZO8",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Quadratic Graphs",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "qRjL4o77y08",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Quadratic and Exponential Word Problems",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "rVC9Dy6Cgn4",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Radical Rational and Absolute Value Equations",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "qB1O6TlEkQU",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Radicals and Rational Exponents",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "VSusHQopnjU",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Ratios, Rates, and Proportions",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "IYQnpSr7fXU",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Right Triangle Trigonometry",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "K3IXKk2Zkuo",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Scatterplots",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "0zWTP9idFjo",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Solving Linear Equations and Inequalities",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "Bw2a469ryJs",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Solving Quadratic Equations",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "ef0ImLTUdcQ",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Solving Systems of Linear Equations",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "oGVdxN0STJo",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Systems of Linear Equation Word Problems",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "_RilZ6zFwxI",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Unit Circle Trigonometry",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "JnMT_AMnErs",
+    "label": "Brain Buffs Tutoring (TIER 5, new channel: judge teaching quality, not just tags) — SAT Math: Unit conversion",
+    "channel": "Brain Buffs Tutoring",
+    "review_level": "strict"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "qN9dLrXLTk8",
+    "label": "Tutorllini — DSAT Math Flashcards: AC Method of Factoring",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "1oFYX08ieVE",
+    "label": "Tutorllini — DSAT Math Flashcards: Above or Below?",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "Atfn3Q2cZSY",
+    "label": "Tutorllini — DSAT Math Flashcards: Absolute Value Equations",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "rRHhfjxRImY",
+    "label": "Tutorllini — DSAT Math Flashcards: Altitude on Hypotenuse",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "io50FjMFy2A",
+    "label": "Tutorllini — DSAT Math Flashcards: Angles in Parallel Lines",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "lX6PHDbk8KQ",
+    "label": "Tutorllini — DSAT Math Flashcards: Area + Volume Scale Factors",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "dWX3dyT9bTg",
+    "label": "Tutorllini — DSAT Math Flashcards: Consecutive Integers",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "synCZPyaMDY",
+    "label": "Tutorllini — DSAT Math Flashcards: Difference of Two Squares",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "yTtNjEEoOH8",
+    "label": "Tutorllini — DSAT Math Flashcards: Equation of a Line",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "oXnV75ybjRU",
+    "label": "Tutorllini — DSAT Math Flashcards: Equilateral Triangle in a Circle",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "jqqZqMRzrsY",
+    "label": "Tutorllini — DSAT Math Flashcards: Exponents + Radicals",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "gPZU0umlRMc",
+    "label": "Tutorllini — DSAT Math Flashcards: Factoring Out the GCF",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "z2Lpcp2enXY",
+    "label": "Tutorllini — DSAT Math Flashcards: Factoring by Grouping",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "h5lPix4A1Iw",
+    "label": "Tutorllini — DSAT Math Flashcards: Factoring with a=1",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "545R4urlf2A",
+    "label": "Tutorllini — DSAT Math Flashcards: Function Translations",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "oD8ocr2Q5A4",
+    "label": "Tutorllini — DSAT Math Flashcards: Interior Angles of Polygons",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "1aAtiMaWuyA",
+    "label": "Tutorllini — DSAT Math Flashcards: Median of a Chart",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "IE9rnTbTcbk",
+    "label": "Tutorllini — DSAT Math Flashcards: Parallel + Perpendicular Slopes",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "2u6I92--WYI",
+    "label": "Tutorllini — DSAT Math Flashcards: Percent Multipliers",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "x16CyJHMdno",
+    "label": "Tutorllini — DSAT Math Flashcards: Radius Tangent Theorem",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "RIFnvo8xh4E",
+    "label": "Tutorllini — DSAT Math Flashcards: Rectangles",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "rEfEtStTJiA",
+    "label": "Tutorllini — DSAT Math Flashcards: SOHCAHTOA + Area",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "Q6hqewtU_2E",
+    "label": "Tutorllini — DSAT Math Flashcards: Sine and Cosine Properties",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "3meaWZedEKA",
+    "label": "Tutorllini — DSAT Math Flashcards: Slant Height of a Cone",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "JpB_Ta-ZEU0",
+    "label": "Tutorllini — DSAT Math Flashcards: Standard Form of a Line",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "lWth7s-y1mY",
+    "label": "Tutorllini — DSAT Math Flashcards: Symbolic Completing the Square",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "YC0u8YT8VH0",
+    "label": "Tutorllini — DSAT Math Flashcards: Triangle Inequality",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "PnjaHIiVqhk",
+    "label": "Tutorllini — DSAT Math Flashcards: Triangle Proofs",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "A9jVVqRNOqM",
+    "label": "Tutorllini — DSAT Math Flashcards: Two-Tangent Theorem",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "sfddPwRkLrg",
+    "label": "Tutorllini — DSAT Math Flashcards: Vertical Angles + Linear Pairs",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "8zsxS31toRQ",
+    "label": "Tutorllini — DSAT Math Flashcards: Vertical Asymptotes",
+    "channel": "Tutorllini Test Prep",
+    "review_level": "standard"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "Fkr0CyTuKaA",
+    "label": "Equivalent Everywhere Except One Point | SAT Rational Expressions",
+    "channel": "SAT Climb",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "fW7dfJ7_PkE",
+    "label": "Review of Exponents and Radicals for the SAT",
+    "channel": "Mathodman",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "mJlPNOswHN4",
+    "label": "Division and Factoring on SAT Math",
+    "channel": "Hayden Rhodea SAT",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "yNgvhz7fQh4",
+    "label": "Overcoming Digital SAT Math - Polynomial Division",
+    "channel": "AG Tutoring LLC",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "wkLGsN6zeK8",
+    "label": "[October SAT] Last Minute REVIEW - 8 Parabola Question Tested on SAT",
+    "channel": "John Jung - The Admission Hackers",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "P6fkZwGTAhA",
+    "label": "The BEST Way to Solve SAT Quadratic Word Problems",
+    "channel": "Penguin SAT Prep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "8A56N7Aw-nQ",
+    "label": "SAT Question: Quadratic Functions- Vertex Form",
+    "channel": "Nicole Hamilton",
+    "review_level": "strict"
   }
 ]

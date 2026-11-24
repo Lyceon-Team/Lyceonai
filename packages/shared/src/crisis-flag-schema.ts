@@ -66,3 +66,28 @@ export const crisisFlagResultSchema = z
   });
 
 export type CrisisFlagResult = z.infer<typeof crisisFlagResultSchema>;
+
+/**
+ * @spec [owner brief "Crisis classifier: record the failure reason, and look at the timeout",
+ *       Karl 2026-11-08; CR-03C-V3-01 §3.4 (the Layer 2 failure classes) and §3.6; SCL-276]
+ *       | @implemented [2026-11-08]
+ * plain English: why Layer 2 (the model classifier) could not answer, recorded on the review case
+ * and the turn's metrics row so an incident can be explained after Vercel's logs expire. Codes
+ * only, never message text.
+ *  - `timeout`: an attempt ran past CRISIS_CLASSIFIER_TIMEOUT_MS;
+ *  - `rate_limited`: Vertex answered 429 / RESOURCE_EXHAUSTED;
+ *  - `upstream_error`: a 5xx, a network failure, or output the parser cannot read;
+ *  - `config_error`: the classifier cannot run as configured (a missing env var or credential, a
+ *    model not found, a 4xx other than 429). A setup failure makes no model attempt.
+ * Whatever the reason, the turn fails closed into human review: never "assume safe".
+ */
+export const crisisDegradedReasonSchema = z.enum([
+  "timeout",
+  "rate_limited",
+  "upstream_error",
+  "config_error",
+]);
+export type CrisisDegradedReason = z.infer<typeof crisisDegradedReasonSchema>;
+
+/** Layer 2 model attempts per turn: the first, and the one retry (SCL-023, SCL-269). */
+export const CRISIS_CLASSIFIER_MAX_ATTEMPTS = 2;

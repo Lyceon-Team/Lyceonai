@@ -316,8 +316,14 @@ describe("no login/dashboard reload loop (hotfix 2026-10-11)", () => {
     expect(reloads).toBe(0);
     expect(toCompletion()).toBeLessThanOrEqual(1);
     expect(window.location.pathname).toBe("/profile/complete");
-    // the form itself, not a redirect: the date-of-birth field is on screen
-    expect(document.querySelector('input[type="date"]')).not.toBeNull();
+    // the form itself, not a redirect: the date-of-birth fields are on screen.
+    // Three fields since the owner brief of 2026-11-04; the native date input is gone.
+    expect(
+      document.querySelector('[data-testid="select-birth-month"]'),
+    ).not.toBeNull();
+    expect(
+      document.querySelector('[data-testid="input-birth-year"]'),
+    ).not.toBeNull();
     // and a second settle moves nothing
     await settle();
     expect(window.location.pathname).toBe("/profile/complete");
@@ -336,6 +342,11 @@ describe("no login/dashboard reload loop (hotfix 2026-10-11)", () => {
     expect(reloads).toBe(0);
     expect(toCompletion()).toBeLessThanOrEqual(1);
     expect(window.location.pathname).toBe("/profile/complete");
-    expect(document.querySelector('input[type="date"]')).not.toBeNull();
+    expect(
+      document.querySelector('[data-testid="select-birth-month"]'),
+    ).not.toBeNull();
+    expect(
+      document.querySelector('[data-testid="input-birth-year"]'),
+    ).not.toBeNull();
   });
 });

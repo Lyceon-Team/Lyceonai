@@ -1239,10 +1239,12 @@ type VideoAction = {
     channel_name: string;
     duration_seconds: number;
     start_seconds: number | null;
+    end_seconds: number | null;
+    segment_id: string | null;
   };
 };
 /** Desmos Lesson #10's action, as the BFF builds it (student-harness/video-offer.ts). */
-function builtVideoAction(): VideoAction {
+function builtVideoAction(variant: "skill" | "segment" = "skill"): VideoAction {
   const out = path.join(
     fs.mkdtempSync(path.join(os.tmpdir(), "video-offer-")),
     "action.json",
@@ -1256,12 +1258,14 @@ function builtVideoAction(): VideoAction {
       "./tests/e2e/student-harness/register.mjs",
       "tests/e2e/student-harness/video-offer.ts",
       out,
+      ...(variant === "segment" ? ["segment"] : []),
     ],
     { stdio: "ignore" },
   );
   return JSON.parse(fs.readFileSync(out, "utf8")) as VideoAction;
 }
 const VIDEO_ACTION = builtVideoAction();
+const SEGMENT_ACTION = builtVideoAction("segment");
 
 const PLAYER = '[data-testid="tutor-video-modal"]';
 const PLAYER_SIZES = [
@@ -1273,7 +1277,10 @@ const PLAYER_SIZES = [
 const VIDEO_SHOTS = process.env.E2E_SHOT_DIR ?? "test-results/tutor-video";
 
 /** Answers the embed with a blank page and the send with the video offer; counts embed loads. */
-async function serveVideoOffer(page: Page): Promise<{ embedLoads: string[] }> {
+async function serveVideoOffer(
+  page: Page,
+  action: VideoAction = VIDEO_ACTION,
+): Promise<{ embedLoads: string[] }> {
   const embedLoads: string[] = [];
   await page.route("https://www.youtube-nocookie.com/**", async (route) => {
     embedLoads.push(route.request().url());
@@ -1301,7 +1308,7 @@ async function serveVideoOffer(page: Page): Promise<{ embedLoads: string[] }> {
             content:
               "This Desmos lesson works an Equivalent Expressions question.",
             content_kind: "message",
-            suggested_action: VIDEO_ACTION,
+            suggested_action: action,
             ui_hints: {
               show_accept_decline: false,
               allow_freeform_reply: true,
@@ -1595,5 +1602,65 @@ for (const [width, height] of [
     } finally {
       await endReviewSession(request, sessionId);
     }
+  });
+}
+
+/**
+ * @spec [owner brief "Phase C follow-up: show the segment, not the whole video", Karl
+ *       2026-11-04] | @implemented [2026-11-04]
+ * plain English: production's EE.3 tap (Lesson #10, 0:00–2:39 of 6:38) as the BFF now sends it.
+ * The embed opens at start=0 and stops at end=159; the line under the header reads "Showing
+ * 0:00–2:39 of 6:38"; the expanded player still fits its viewport share with the line; "Watch
+ * full video" reloads the same frame without `end` and posts the segment id once.
+ */
+for (const size of [PLAYER_SIZES[0], PLAYER_SIZES[3]] as const) {
+  test(`video segment, ${size.name} ${size.width}x${size.height}: plays 0:00–2:39 and stops; Watch full video widens it`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await asPersona(page, "paid");
+    const { embedLoads } = await serveVideoOffer(page, SEGMENT_ACTION);
+    const beacons: unknown[] = [];
+    await page.route(`${BASE}/api/perf/video-full-watch`, async (route) => {
+      beacons.push(route.request().postDataJSON());
+      await route.fulfill({ status: 204 });
+    });
+    await page.goto(`${BASE}/chat`);
+    const lisaPage = page.locator('[data-testid="lisa-page"]');
+    await expect(lisaPage).toBeVisible();
+    await watchOfferedVideo(lisaPage);
+
+    const embed = page.locator('[data-testid="tutor-video-embed"]');
+    await expect(embed).toHaveAttribute(
+      "src",
+      `https://www.youtube-nocookie.com/embed/${SEGMENT_ACTION.video.video_id}?rel=0&start=0&end=159&enablejsapi=1`,
+    );
+    await expect(
+      page.locator('[data-testid="tutor-video-segment-label"]'),
+    ).toHaveText("Showing 0:00–2:39 of 6:38");
+    await expect(
+      page.locator('[data-testid="tutor-video-watch-full"]'),
+    ).toBeVisible();
+    await expectExpanded(page, size.width, size.height);
+    expect(embedLoads).toHaveLength(1);
+    await page.screenshot({
+      path: `${VIDEO_SHOTS}/segment-${size.width}x${size.height}.png`,
+    });
+
+    const node = await embed.elementHandle();
+    await page.locator('[data-testid="tutor-video-watch-full"]').click();
+    await expect.poll(() => embedLoads.length).toBe(2);
+    expect(new URL(embedLoads[1]!).searchParams.has("end")).toBe(false);
+    expect(new URL(embedLoads[1]!).searchParams.get("start")).toBe("0");
+    expect(await embed.evaluate((el, n) => el === n, node)).toBe(true);
+    await expect(
+      page.locator('[data-testid="tutor-video-segment"]'),
+    ).toHaveCount(0);
+    await expect
+      .poll(() => beacons)
+      .toEqual([{ segment_id: SEGMENT_ACTION.video.segment_id }]);
+    await page.screenshot({
+      path: `${VIDEO_SHOTS}/segment-full-${size.width}x${size.height}.png`,
+    });
   });
 }

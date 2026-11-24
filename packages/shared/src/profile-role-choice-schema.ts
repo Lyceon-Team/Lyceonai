@@ -22,6 +22,28 @@ import { isValidLocalDate } from "./calendar/time.js";
 export const GUARDIAN_MIN_AGE = 18;
 
 /**
+ * The plausible age bounds for a date of birth, in whole years.
+ *
+ * @spec [F-41 (Brief 8 ruling 6, 2026-10-01) owns the 120-year ceiling; the 5-year floor is the
+ *       owner's ruling of 2026-11-04 on the live bug below] | @implemented [2026-11-04]
+ *
+ * plain English: the ceiling has always been here; the FLOOR is new. Four profiles saved a
+ * birthday in the CURRENT year, which is age 0 — and age 0 passed every check we had, because a
+ * birthday earlier this year is a past date and the only lower bound was `age < 0`. The floor
+ * closes that: nobody signing up for SAT prep was born in the last five years.
+ *
+ * They live here, beside `GUARDIAN_MIN_AGE` and `dateOfBirthSchema`, because both the browser
+ * (`packages/shared/src/birthday.ts`) and the server (`server/lib/role-choice.ts`) judge against
+ * them, and a second copy on either side is how the two drift apart.
+ *
+ * trade-off: the floor is deliberately well below the under-13 threshold, so it refuses only the
+ * impossible and never pre-empts the under-13 gate, which still accepts a young student and holds
+ * them at the guardian link (Doc-01 §37.1, unchanged).
+ */
+export const MIN_PLAUSIBLE_AGE_YEARS = 5;
+export const MAX_PLAUSIBLE_AGE_YEARS = 120;
+
+/**
  * `YYYY-MM-DD`, the value an `<input type="date">` produces, AND a real calendar date.
  *
  * F-41 (Brief 8 ruling 6, 2026-10-01): the pattern alone let `2010-02-31` through, and the
@@ -32,8 +54,18 @@ export const GUARDIAN_MIN_AGE = 18;
  */
 export const dateOfBirthSchema = z
   .string()
+  // The 4-digit year is part of the shape (owner brief 2026-11-04): a 2-digit year is refused,
+  // never widened to a century. `\d{4}` has always said so; the client now enforces the same
+  // rule on the Year box, so the two agree.
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Date of birth must be YYYY-MM-DD")
   .refine(isValidLocalDate, { message: "Date of birth must be a real date" });
+// DELIBERATELY NOT HERE: "not in the future", and the age floor and ceiling. All three need
+// today's date, and this schema must stay pure — `ageInYears` parses through it, so a clock read
+// in here would make that pure, `today`-taking function secretly depend on the real clock and
+// would turn a future date's age from a negative number into `null` for every caller. Those three
+// rules live in `dateOfBirthRefusal` (server) and `resolveBirthday` (client), which both take
+// `today` as a parameter. (Owner brief 2026-11-04 asked for them "in the existing Zod schema";
+// they are applied on the same request, one layer in, for this reason.)
 
 /**
  * Every coded refusal on the profile-completion and link-redeem surfaces. The server owns

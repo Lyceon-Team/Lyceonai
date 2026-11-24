@@ -7,21 +7,24 @@
  * plain English: the card LISA's video offer renders as. Every field on it came from the
  * server's video library, never from the model's text. "Watch" opens TutorVideoModal. A video
  * whose id is not a YouTube id renders no card at all (nothing to play, so nothing to offer).
+ *
+ * @spec [owner brief "Phase C follow-up: show the segment, not the whole video", Karl
+ *       2026-11-04, build 4] | @implemented [2026-11-04]
+ * A "Watch full video" press in the player is reported here (useVideoFullWatchReport): the
+ * segment id only, fire and forget.
  */
 import { useRef, useState } from "react";
 import { PlayCircle } from "lucide-react";
 import { ClampedLabel } from "@/components/student-ui/ClampedLabel";
 import { LYC_FOCUS } from "@/components/ui/button";
-import type { TutorVideo } from "@/hooks/tutor-client";
-import { TutorVideoModal, videoEmbedUrl } from "./TutorVideoModal";
+import { useVideoFullWatchReport, type TutorVideo } from "@/hooks/tutor-client";
+import {
+  formatDuration,
+  TutorVideoModal,
+  videoEmbedUrl,
+} from "./TutorVideoModal";
 
-export function formatDuration(seconds: number): string {
-  const s = Math.max(0, Math.round(seconds));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const r = String(s % 60).padStart(2, "0");
-  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${r}` : `${m}:${r}`;
-}
+export { formatDuration };
 
 export function VideoRecommendationCard({
   video,
@@ -33,6 +36,7 @@ export function VideoRecommendationCard({
   const [open, setOpen] = useState(false);
   // Focus returns here when the player closes (owner brief 2026-10-27).
   const watchRef = useRef<HTMLButtonElement>(null);
+  const fullWatch = useVideoFullWatchReport();
   if (videoEmbedUrl(video) === null) return null;
   return (
     <div
@@ -64,6 +68,7 @@ export function VideoRecommendationCard({
         open={open}
         onOpenChange={setOpen}
         returnFocusTo={watchRef}
+        onWatchFull={(segmentId) => fullWatch.mutate({ segment_id: segmentId })}
       />
     </div>
   );

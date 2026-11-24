@@ -42,9 +42,15 @@ import {
   billingCheckoutOutcomeSchema,
   billingPlansResponseSchema,
   billingPortalOutcomeSchema,
+  cancelResponseSchema,
+  cancelStateResponseSchema,
+  cancelUndoResponseSchema,
   type BillingCheckoutOutcome,
   type BillingPeriodChoice,
   type BillingPlanMetadata,
+  type CancelResponse,
+  type CancelStateResponse,
+  type CancelUndoResponse,
 } from "../../../packages/shared/src/billing-schema";
 
 /**
@@ -67,7 +73,11 @@ export type { BillingCheckoutOutcome };
 export type { BillingPlanMetadata };
 
 async function postBilling(
-  endpoint: "/api/billing/checkout" | "/api/billing/portal",
+  endpoint:
+    | "/api/billing/checkout"
+    | "/api/billing/portal"
+    | "/api/billing/cancel"
+    | "/api/billing/cancel/undo",
   body?: unknown,
 ): Promise<unknown> {
   const response = await csrfFetch(endpoint, {
@@ -196,4 +206,59 @@ export async function openBillingPortal(): Promise<string> {
   }
 
   return parsed.data.url;
+}
+
+/**
+ * Cancellation — three calls, all schema-parsed.
+ *
+ * @spec [SCL-271; SCL-272; Coding Standards §7.2, §11.1] | @implemented [2026-11-03]
+ *
+ * plain English: the client asks the server what cancelling would do, asks it to
+ * do it, or asks it to undo. Expected outcome: the client computes NOTHING about
+ * when access ends — it displays the date the server sent. Trade-off: one extra
+ * round trip to render the button, against a UI that could otherwise derive a
+ * date from `stripeStatus` and be wrong about it.
+ *
+ * FAIL CLOSED ON A SHAPE IT DOES NOT UNDERSTAND, like the two calls above: a
+ * response that does not parse is an error, never a half-read object. A missing
+ * `accessEndsAt` read as `undefined` would render "access ends on " with nothing
+ * after it, which is worse than saying the response was not understood.
+ */
+export const CANCEL_STATE_PATH = "/api/billing/cancel-state" as const;
+
+export async function fetchCancelState(): Promise<CancelStateResponse> {
+  const res = await csrfFetch(CANCEL_STATE_PATH, { credentials: "include" });
+  if (!res.ok) throw await parseApiErrorFromResponse(res);
+
+  const parsed = cancelStateResponseSchema.safeParse(await res.json());
+  if (!parsed.success) {
+    throw new Error("Billing response did not match the cancel-state contract");
+  }
+  return parsed.data;
+}
+
+export async function cancelSubscription(
+  subscriptionId: string,
+): Promise<CancelResponse> {
+  const payload = await postBilling("/api/billing/cancel", { subscriptionId });
+
+  const parsed = cancelResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error("Billing response did not match the cancel contract");
+  }
+  return parsed.data;
+}
+
+export async function undoSubscriptionCancellation(
+  subscriptionId: string,
+): Promise<CancelUndoResponse> {
+  const payload = await postBilling("/api/billing/cancel/undo", {
+    subscriptionId,
+  });
+
+  const parsed = cancelUndoResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error("Billing response did not match the undo contract");
+  }
+  return parsed.data;
 }

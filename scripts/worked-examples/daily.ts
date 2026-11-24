@@ -16,7 +16,7 @@
  *           than one: refuses (one example a day). One: checks Karl's merge from GitHub's record
  *           (approval.ts), runs every content rule, generates the composition into <dir>/composition
  *           and writes <dir>/post.json (label, title, the TikTok, Instagram and Facebook captions
- *           in the SCL-262 format with the music credit, TikTok's keywords, the run's warnings,
+ *           in the SCL-262 format (no music credit: it is on the end card, Karl 2026-11-04), TikTok's keywords, the run's warnings,
  *           approval; SCL-265).
  *           --dry-run (pull requests only) uses the given date and a placeholder approval so the
  *           whole path is proven on the fixture tree; the workflow never claims or posts then.
@@ -38,19 +38,29 @@ import {
   workedExamplePostSchema,
   workedExamplePostedLedgerSchema,
   type WorkedExamplePost,
+  type WorkedExampleStyle,
 } from "../../packages/shared/src/worked-example-schema";
 import { chicagoToday } from "../../shared/sat-test-dates";
 import { campaignLinks } from "../../shared/social/funnel";
-import { socialDateWarnings } from "../../shared/social/posts";
+import {
+  copyBlockProblems,
+  socialDateWarnings,
+} from "../../shared/social/posts";
 import {
   captionProblems,
+  hasYoutubeShorts,
   titleProblems,
+  workedExampleYoutubeDescription,
+  workedExampleYoutubeTitle,
+  youtubeProblems,
   workedExampleCaption,
   workedExampleFacebookCaption,
   workedExampleInstagramCaption,
   workedExampleKeywords,
   workedExampleLabel,
+  titleTopic,
   workedExampleTitle,
+  type TitleSource,
 } from "../../shared/worked-examples/rules";
 import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
 import {
@@ -64,6 +74,7 @@ import {
   exampleProblems,
   loadExamples,
   loadPosted,
+  loadStyle,
   POSTED_PATH,
 } from "./content";
 import { folderCommit, pullForCommit } from "./github";
@@ -102,49 +113,82 @@ export type WorkedExampleCopy = {
   instagram_caption: string;
   facebook_caption: string;
   keywords: ReturnType<typeof workedExampleKeywords>;
+  /** Where the title's topic came from (the "Week ready" header shows it). */
+  title_source: TitleSource;
+  /** The YouTube Shorts block, from W48 (Karl, 2026-11-14); null before. */
+  youtube: { title: string; description: string } | null;
+  /** The question the copy was built for: buildPost checks the YouTube block against it (H5). */
+  question: SeedQuestion;
 };
 
 /** The real copy for one example, from the one caption builder (SCL-265). */
 export function workedExampleCopy(
   e: ExampleOnBranch,
   question: SeedQuestion,
-  credit: string,
+  style: WorkedExampleStyle,
 ): WorkedExampleCopy {
+  // The captions show the skill's short topic (STYLE display_name, Karl 2026-11-11); the content
+  // check refuses an example with no style row, so a missing row here is a programming error. A
+  // row without display_name falls back to the skill name shortened at a word boundary (Karl's
+  // pipeline fixes 2026-11-14, item 5), never cut inside a word.
+  const chosen = titleTopic(style, e.content.skill_code);
+  if (!chosen) throw new Error(`no style row for "${e.content.skill_code}"`);
+  const { topic } = chosen;
   return {
-    title: workedExampleTitle(e.content, question),
-    caption: workedExampleCaption(e.content, question, credit),
+    title: workedExampleTitle(question, topic),
+    caption: workedExampleCaption(e.content, question, topic),
     instagram_caption: workedExampleInstagramCaption(
       e.content,
       question,
-      credit,
+      topic,
     ),
-    facebook_caption: workedExampleFacebookCaption(e.content, question, credit),
+    facebook_caption: workedExampleFacebookCaption(e.content, question, topic),
     keywords: workedExampleKeywords(e.content, question),
+    title_source: chosen.source,
+    // YouTube Shorts from W48 (Karl, 2026-11-14); none on earlier posts.
+    youtube: hasYoutubeShorts(e.content.post_on)
+      ? {
+          title: workedExampleYoutubeTitle(workedExampleTitle(question, topic)),
+          description: workedExampleYoutubeDescription(
+            e.content,
+            question,
+            topic,
+          ),
+        }
+      : null,
+    question,
   };
 }
 
 /**
- * The post for one example: label, title, the three captions (music credited, no link), TikTok's
- * keywords, the run's warnings, approval. Refuses on any rule (SCL-265, in the SCL-262 format).
+ * The post for one example: label, title, the three captions (no music credit, no link: the
+ * credit is on the end card, Karl 2026-11-04), TikTok's keywords, the run's warnings, approval.
+ * Refuses on any rule (SCL-265, in the SCL-262 format), and on any copy block that carries
+ * anything but what Karl pastes (copyBlockProblems).
  */
 export function buildPost(
   e: ExampleOnBranch,
   copy: WorkedExampleCopy,
-  credit: string,
   approval: ExampleApproval,
 ): WorkedExamplePost {
   const problems = [
     ...titleProblems(copy.title),
-    ...captionProblems(copy.caption, credit, copy.title).map(
-      (p) => `tiktok ${p}`,
-    ),
-    ...captionProblems(copy.instagram_caption, credit, copy.title).map(
+    ...captionProblems(copy.caption, copy.title).map((p) => `tiktok ${p}`),
+    ...captionProblems(copy.instagram_caption, copy.title).map(
       (p) => `instagram ${p}`,
     ),
-    ...captionProblems(copy.facebook_caption, credit, copy.title).map(
+    ...captionProblems(copy.facebook_caption, copy.title).map(
       (p) => `facebook ${p}`,
     ),
     ...(copy.keywords.ok ? [] : [`tiktok ${copy.keywords.error}`]),
+    ...(copy.keywords.ok
+      ? copyBlockProblems(copy.keywords.keywords.join("\n")).map(
+          (p) => `tiktok keywords ${p}`,
+        )
+      : []),
+    ...(copy.youtube === null
+      ? []
+      : youtubeProblems(copy.youtube, copy.title, copy.question)),
   ];
   if (problems.length > 0 || !copy.keywords.ok)
     throw new Error(`refused:\n  ${problems.join("\n  ")}`);
@@ -159,6 +203,12 @@ export function buildPost(
     instagram_caption: copy.instagram_caption,
     facebook_caption: copy.facebook_caption,
     keywords: copy.keywords.keywords,
+    ...(copy.youtube === null
+      ? {}
+      : {
+          youtube_title: copy.youtube.title,
+          youtube_description: copy.youtube.description,
+        }),
     warnings: socialDateWarnings(e.content.post_on),
     links: campaignLinks("worked_example"),
     approval,
@@ -212,8 +262,7 @@ async function select(a: Args): Promise<void> {
   generate(content, e.dir, join(out, "composition"));
   const post = buildPost(
     e,
-    workedExampleCopy(e, question, kit.track.credit),
-    kit.track.credit,
+    workedExampleCopy(e, question, loadStyle(content)),
     approval,
   );
   writeFileSync(join(out, "post.json"), `${JSON.stringify(post, null, 2)}\n`);

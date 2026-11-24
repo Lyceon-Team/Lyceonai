@@ -10,7 +10,14 @@
  * renders no card, and never reaches an iframe.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
+import {
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+} from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { TutorVideo } from "@/hooks/tutor-client";
 import { SuggestedActionLink } from "./TutorThreadParts";
 import {
@@ -23,12 +30,22 @@ afterEach(() => {
   cleanup();
 });
 
+/** The card records "Watch full video" through TanStack Query, so it renders in a provider. */
+function render(ui: ReactElement): ReturnType<typeof rtlRender> {
+  return rtlRender(
+    <QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>,
+  );
+}
+
 const VIDEO: TutorVideo = {
   video_id: "f9DxgfyvRKg",
   title: "Point Slope Form (SAT Math Formula 3/23)",
   channel_name: "Scalar Learning",
   duration_seconds: 26,
   start_seconds: 5,
+  // The skill path: a whole video, no segment.
+  end_seconds: null,
+  segment_id: null,
 };
 
 describe("VideoRecommendationCard", () => {

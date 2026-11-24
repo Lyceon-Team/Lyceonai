@@ -15,6 +15,7 @@ export {
   resolvedScopeSchema,
   recentMessageSchema,
   memorySummarySchema,
+  chatCompactionContentSchema,
   policyAssignmentSchema,
   masterySnapshotSchema,
   recentFrictionSchema,
@@ -52,4 +53,5 @@ export {
   type OrchestrationTiming,
   type TurnUsage,
   type OrchestrateErrorResponse,
+  type ChatCompactionContent,
 } from "./_tutor-orchestrator-wire.generated.js";

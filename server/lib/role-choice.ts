@@ -27,6 +27,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RuntimeRole } from "./auth-role.js";
 import {
   GUARDIAN_MIN_AGE,
+  MAX_PLAUSIBLE_AGE_YEARS,
+  MIN_PLAUSIBLE_AGE_YEARS,
   ageInYears,
   type RoleChoiceErrorCode,
 } from "../../packages/shared/src/profile-role-choice-schema";
@@ -133,8 +135,12 @@ export function decideRoleChoice(input: {
   return { ok: true, role: wanted === "guardian" ? "guardian" : "student" };
 }
 
-/** F-41: an age beyond this is a typing error, not a person. */
-export const MAX_PLAUSIBLE_AGE_YEARS = 120;
+/**
+ * The plausible age bounds. Defined once, in `packages/shared/src/profile-role-choice-schema.ts`,
+ * because the browser judges against the same two numbers; re-exported here so this module's
+ * existing importers keep working.
+ */
+export { MAX_PLAUSIBLE_AGE_YEARS, MIN_PLAUSIBLE_AGE_YEARS };
 
 /** F-41: the refusal for a date of birth that is not a real, plausible, past date. */
 export const INVALID_DATE_OF_BIRTH: RoleChoiceRefusal = {
@@ -144,16 +150,29 @@ export const INVALID_DATE_OF_BIRTH: RoleChoiceRefusal = {
 };
 
 /**
- * Pure. F-41 (Brief 8 ruling 6, 2026-10-01): a date of birth is accepted only as a real date that
- * is not in the future and not more than 120 years ago. Returns the refusal, or null.
+ * Pure. A date of birth is accepted only as a real date that is not in the future, not more than
+ * 120 years ago, and not less than 5 years ago. Returns the refusal, or null.
  *
- * @spec [Brief 8 ruling 6; Doc 01 V8 §9 / §37.1; SCL-187 rule 1 (APPLIED)] | @implemented
- * [2026-10-01] | plain English: this is the format-and-plausibility half of the onboarding age
- * check. The AGE half is not a refusal: an under-13 student is ACCEPTED, the `profiles_set_age`
- * trigger derives `is_under_13`, and `requireGuardianLinkForUnder13` closes every learning surface
- * until a guardian link is active while `requireStudentOnly` keeps LISA closed regardless. That
- * is SCL-187 as live, and the owner's instruction of 2026-10-01 ("check what is currently live in
+ * @spec [Brief 8 ruling 6 (F-41, 2026-10-01); Doc 01 V8 §9 / §37.1; SCL-187 rule 1 (APPLIED);
+ *       the 5-year floor is the owner's ruling of 2026-11-04] | @implemented [2026-11-04]
+ *
+ * plain English: this is the format-and-plausibility half of the onboarding age check. The AGE
+ * half is not a refusal: an under-13 student is ACCEPTED, the `profiles_set_age` trigger derives
+ * `is_under_13`, and `requireGuardianLinkForUnder13` closes every learning surface until a
+ * guardian link is active while `requireStudentOnly` keeps LISA closed regardless. That is
+ * SCL-187 as live, and the owner's instruction of 2026-10-01 ("check what is currently live in
  * the repo now and follow that") — refusing under-13 here would make that gate unreachable.
+ *
+ * THE FLOOR IS WHY THE LIVE BUG GOT THROUGH. Until 2026-11-04 the only lower bound was
+ * `age < 0`, so a birthday in the CURRENT year — age 0 — was accepted by every check: it is a
+ * real date, it is in the past, and it is well under 120 years ago. Four profiles stored one
+ * (`2026-04-04`, `2026-04-03`, `2026-11-04`, `2026-06-19`). The floor refuses that class while
+ * staying far below the under-13 threshold, so it never pre-empts the gate above.
+ *
+ * edge case: the floor applies to a NEW date only. The onboarding route does not re-judge a
+ * stored, locked date (G2-03), so an existing row the floor would now refuse cannot lock anyone
+ * out of their own profile — the four bad rows are corrected by prompting their owners, not by
+ * refusing them at the door.
  */
 export function dateOfBirthRefusal(
   dateOfBirth: string | null | undefined,
@@ -167,8 +186,24 @@ export function dateOfBirthRefusal(
     };
   }
   const age = ageInYears(dateOfBirth, today);
-  if (age === null || age < 0 || age > MAX_PLAUSIBLE_AGE_YEARS) {
+  if (age === null || age > MAX_PLAUSIBLE_AGE_YEARS) {
     return INVALID_DATE_OF_BIRTH;
+  }
+  if (age < 0) {
+    // Named separately from the generic refusal so the person is told what is actually wrong.
+    return {
+      status: 400,
+      code: "DATE_OF_BIRTH_REQUIRED",
+      message: "Your date of birth can't be in the future.",
+    };
+  }
+  if (age < MIN_PLAUSIBLE_AGE_YEARS) {
+    return {
+      status: 400,
+      code: "DATE_OF_BIRTH_REQUIRED",
+      message:
+        "Please check your birth year — that date is less than 5 years ago.",
+    };
   }
   return null;
 }

@@ -243,6 +243,28 @@ const ALLOWED_EXACT: ReadonlySet<string> = new Set([
   // Not in the approval by name: answers 409 ACCOUNT_SELECTION_DISABLED to every caller and
   // reads and writes nothing (server/routes/account-routes.ts). Listed so it is visible here.
   "POST /api/account/select",
+  // NOT IN THE 2026-09-29 APPROVAL BY NAME — added with SCL-271/SCL-272 and FLAGGED FOR THE
+  // OWNER TO RATIFY OR REVERSE, the way `GET /api/sat-dates/bound` was. Grounds, stated so the
+  // decision is visible rather than inherited:
+  //   - SCL-271 ruling 1 is that cancellation ALWAYS works. `requireGuardianLinkForUnder13`
+  //     stops an unlinked under-13 STARTING a purchase (/checkout, /portal); on these three it
+  //     would stop one ENDING a subscription, which is the failure the ruling exists to remove
+  //     and would fall hardest on the account least able to resolve it.
+  //   - They are payer-only (SCL-272) and the payer is the caller's own Stripe Customer, which
+  //     an unlinked under-13 does not have: `GET /cancel-state` answers `{subscriptions: []}`
+  //     and the two writes answer 403 NO_STRIPE_CUSTOMER. No student or learning data is
+  //     reachable through any of them in any state.
+  //   - The §11.2 email route stays open to both parties either way.
+  "GET /api/billing/cancel-state",
+  "POST /api/billing/cancel",
+  "POST /api/billing/cancel/undo",
+  // OWNER RULING 2026-11-21 (counsel-approved) 4, SCL-282: "A teen under 13 may claim through
+  // /join." Claiming IS how such a student gets linked, so the gate cannot stand in front of it.
+  // The lookup answers what a token is and nothing about any student; the claim is student-role
+  // only (inline gate in server/routes/join-routes.ts) and creates the link. CL5 in
+  // tests/ci/guardian-invites.pg.ci.test.ts.
+  "POST /api/join/lookup",
+  "POST /api/join/claim",
 ]);
 const ALLOWED_PREFIXES: ReadonlyArray<string> = [
   "/api/auth/",
@@ -324,6 +346,12 @@ const allowedReads = (studentId: string): ReadonlyArray<string> => [
   `/api/students/${studentId}/links`,
   "/api/billing/status",
   "/api/sat-dates/bound",
+  // Allow-listed above, and PROVEN reachable here rather than merely declared: an allow-list
+  // entry nothing exercises is a claim, not a gate. It answers 200 with an empty list in every
+  // state below — no link, linked, and no date of birth — because the caller holds no Stripe
+  // Customer and `resolvePayerSubscriptions` therefore returns NO_STRIPE_CUSTOMER, which this
+  // route treats as "the payer of nothing" rather than as a failure.
+  "/api/billing/cancel-state",
 ];
 const ALLOWED_READS = allowedReads(KID);
 

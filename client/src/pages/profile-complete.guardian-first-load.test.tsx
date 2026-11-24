@@ -32,6 +32,7 @@ import { Router as WouterRouter } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { enterBirthday } from "@/components/profile/__tests__/enter-birthday";
 /** The auth context's state, as the real provider holds it: changed only by refreshUser. */
 const auth = vi.hoisted(() => {
   const listeners = new Set<() => void>();
@@ -171,9 +172,7 @@ describe("G-NEW-03 a new guardian's first load", () => {
     fireEvent.change(screen.getByTestId("input-display-name"), {
       target: { value: "Pat Parent" },
     });
-    fireEvent.change(screen.getByTestId("input-date-of-birth"), {
-      target: { value: "1980-05-01" },
-    });
+    enterBirthday("1980-05-01");
     await act(async () => {
       fireEvent.click(screen.getByTestId("button-complete-profile"));
     });

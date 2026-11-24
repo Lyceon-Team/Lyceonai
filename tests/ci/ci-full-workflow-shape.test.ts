@@ -8,9 +8,12 @@
  * plain English: ci-full.yml splits `pg-mutations` into a matrix of groups and the review UI
  * mutation gate into shard jobs plus a job that adds up their totals. A split can lose a check
  * silently, so this reads the REAL workflow file and holds:
- *   - every `pg-mutations` step that is not setup carries exactly one group, the group is in the
- *     matrix, and every group has steps (a new step added without a group would run in every job,
- *     or in none if its `if` names a missing group: both are red here);
+ *   - every `pg-mutations` step that is not setup carries exactly one group, the group is in
+ *     ALL_GROUPS (scripts/ci/pg-mutation-scope.mjs; the matrix is that list less the scoped groups
+ *     a change cannot affect), and every group has steps (a new step added without a group would
+ *     run in every job, or in none if its `if` names a missing group: both are red here);
+ *   - the matrix comes from `pg-scope`, and each scoped group re-proves its scope (the trace
+ *     step) before any of its other checks (CI scope ruling, Karl 2026-11-04);
  *   - steps that share state stay together: the two calendar parity steps read the database the
  *     pipeline step builds, and the PostgREST harness (BYPASSRLS is cluster-wide) is its group's
  *     last step;
@@ -23,6 +26,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import {
+  ALL_GROUPS,
+  SCOPED_GROUPS,
+} from "../../scripts/ci/pg-mutation-scope.mjs";
 
 type Step = {
   name?: string;
@@ -71,13 +78,46 @@ function groupOf(step: Step): string | null {
 
 describe("pg-mutations: every step in exactly one group", () => {
   const pg = job("pg-mutations");
-  const groups = (pg.strategy?.matrix?.group ?? []) as string[];
+  const groups: readonly string[] = ALL_GROUPS;
   const steps = pg.steps ?? [];
   const checks = steps.filter((s) => !SETUP.has(s.name ?? ""));
 
   it("has groups and checks to split (presence first)", () => {
     expect(groups.length).toBeGreaterThanOrEqual(2);
     expect(checks.length).toBeGreaterThanOrEqual(20);
+  });
+
+  it("the matrix is pg-scope's output, and pg-mutations waits for it", () => {
+    expect(pg.strategy?.matrix?.group).toBe(
+      "${{ fromJSON(needs.pg-scope.outputs.groups) }}",
+    );
+    expect(pg.needs).toEqual(["scope", "pg-scope"]);
+    const scope = job("pg-scope");
+    expect(scope.needs).toBe("scope");
+    const decide = (scope.steps ?? []).find(
+      (s) => s.name === "Decide the groups",
+    );
+    expect(decide?.run ?? "").toContain(
+      "node scripts/ci/pg-mutation-scope.mjs groups",
+    );
+    expect(decide?.run ?? "").toContain(
+      "ALL=true node scripts/ci/pg-mutation-scope.mjs groups",
+    );
+  });
+
+  it("each scoped group re-proves its scope before its other checks", () => {
+    expect(SCOPED_GROUPS.length).toBeGreaterThan(0);
+    for (const g of SCOPED_GROUPS) {
+      expect(groups, g).toContain(g);
+      const mine = checks.filter((s) => groupOf(s) === g);
+      const trace = mine.findIndex(
+        (s) => s.run === `bash scripts/ci/pg-mutation-scope-trace.sh ${g}`,
+      );
+      expect(trace, `${g} has no scope trace step`).toBeGreaterThanOrEqual(0);
+      // Only its tool install may precede it.
+      for (const s of mine.slice(0, trace))
+        expect(s.name ?? "", g).toMatch(/^Install /);
+    }
   });
 
   it("setup steps run in every group (no `if`)", () => {

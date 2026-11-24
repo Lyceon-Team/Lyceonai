@@ -147,6 +147,16 @@ const DESMOS_LESSON: FakeVideo = {
   format: "lesson",
   skill_codes: ["H.C.1"],
 };
+const RW_LESSON: FakeVideo = {
+  video_id: "RwTransit01",
+  title: "Transitions in 5 minutes",
+  channel_name: "SAT Prep",
+  duration_seconds: 300,
+  start_seconds: null,
+  methods: [],
+  format: "lesson",
+  skill_codes: ["CAS.TRN"],
+};
 const FORMAT_ORDER = ["formula", "worked_example", "lesson", "strategy"];
 
 function serveLibrary(videos: FakeVideo[]): void {
@@ -394,6 +404,9 @@ describe("video intents are served with no model call", () => {
         channel_name: "Desmos Prep",
         duration_seconds: 1200,
         start_seconds: 30,
+        // An untagged item takes the skill path: the whole video, no segment.
+        end_seconds: null,
+        segment_id: null,
       },
     });
     // The retrieval asked for the Desmos method.
@@ -534,6 +547,20 @@ describe("Phase C: a video tap on a sub-skill-tagged item", () => {
       taxonomy_version: "scl-v1.0.0",
       tagged_by: "test",
     });
+    // The segments' rows, for the end the served video stops at (production Lesson #10's
+    // 159–257; the algebraic segment's end is a test value).
+    db.current.seed("video_segments", {
+      segment_id: SEGMENT_DESMOS.segment_id,
+      video_id: SEGMENT_DESMOS.video_id,
+      start_seconds: 159,
+      end_seconds: 257,
+    });
+    db.current.seed("video_segments", {
+      segment_id: SEGMENT_ALGEBRAIC.segment_id,
+      video_id: SEGMENT_ALGEBRAIC.video_id,
+      start_seconds: 42,
+      end_seconds: 120,
+    });
   });
 
   it("'Desmos video' requires Desmos: the Desmos segment, at its start, even though an algebraic one shares more", async () => {
@@ -553,6 +580,8 @@ describe("Phase C: a video tap on a sub-skill-tagged item", () => {
         channel_name: "Tutorllini Test Prep",
         duration_seconds: 398,
         start_seconds: 159,
+        end_seconds: 257,
+        segment_id: SEGMENT_DESMOS.segment_id,
       },
     });
     const call = db.current.rpcCalls.find(
@@ -587,6 +616,7 @@ describe("Phase C: a video tap on a sub-skill-tagged item", () => {
     expect(res.body.data.response.suggested_action.video).toMatchObject({
       video_id: "AlgebraAAAA",
       start_seconds: 42,
+      end_seconds: 120,
     });
     const call = db.current.rpcCalls.find(
       (c) => c.name === "video_segments_for_question",
@@ -625,6 +655,213 @@ describe("Phase C: a video tap on a sub-skill-tagged item", () => {
       miss: true,
       segment_id: null,
     });
+  });
+});
+
+/**
+ * @spec [owner brief "Help-level engine", Karl 2026-11-05 (rules 1–5 and its tests); SCL-275]
+ *       | @implemented [2026-11-05]
+ * plain English: the help level on the real route and the real worker. What the worker is sent
+ * (`help_level`, `submit_state`, `worked_step`), what its prompt says, and what the turn's metrics
+ * row records, tap by tap.
+ */
+describe("help level on the real route", () => {
+  const ITEM_ANSWERED = "aaaaaaaa-0000-4000-8000-0000000000aa";
+
+  const ITEM_SERVED = "aaaaaaaa-0000-4000-8000-0000000000ab";
+
+  /** A review conversation on an answered item: post-submit. */
+  function seedPostSubmitConversation(): string {
+    return seedItemConversation(ITEM_ANSWERED, "answered");
+  }
+
+  /** A review conversation on one of the student's review items, in the given status. */
+  function seedItemConversation(itemId: string, status: string): string {
+    seedReviewItem(itemId, Q_MATH);
+    db.current
+      .rows("review_session_items")
+      .find((r) => r.id === itemId)!.status = status;
+    const id = seedConversation(Q_MATH);
+    const row = db.current
+      .rows("tutor_conversations")
+      .find((r) => r.id === id)!;
+    row.source_session_item_id = itemId;
+    return id;
+  }
+
+  async function seedHelpKeywords(): Promise<void> {
+    db.current.seed("tutor_context_runtime_config", {
+      key: "tutor_help_keywords",
+      value: {
+        version: 1,
+        signals: {
+          stuck: ["idk", "i m stuck"],
+          solve_it: ["just solve it", "show me"],
+        },
+      },
+      value_type: "object",
+      owner: "engineering",
+      description: "test",
+      environment: "test",
+      updated_at: "2026-11-05T00:00:00.000Z",
+    });
+    await TutorConfig.loadAll();
+  }
+
+  /** One turn, then a pause so the next turn's metrics row sorts after this one. */
+  async function turn(
+    conv: string,
+    message: string,
+    intent?: ReviewIntent,
+  ): Promise<Record<string, unknown>> {
+    const before = workerBodies.length;
+    const res =
+      intent === undefined
+        ? await send(conv, message)
+        : await tap(conv, intent);
+    expect(res.status).toBe(200);
+    expect(workerBodies).toHaveLength(before + 1);
+    await new Promise((r) => setTimeout(r, 3));
+    return workerBodies[before]!;
+  }
+
+  const sent = (b: Record<string, unknown>): unknown[] => [
+    b.help_level,
+    b.submit_state,
+    b.worked_step,
+  ];
+
+  it("Student B's taps, replayed post-submit: level 3 by tap 3, the full solution at tap 3, recorded each turn", async () => {
+    const conv = seedPostSubmitConversation();
+    const bodies = [await turn(conv, "", "walkthrough")];
+    for (let i = 0; i < 5; i++)
+      bodies.push(await turn(conv, "", "step_understood"));
+    expect(bodies.map(sent)).toEqual([
+      ["hint", "post_submit", null],
+      ["worked_step", "post_submit", { index: 1, final: false }],
+      ["worked_step", "post_submit", { index: 2, final: false }],
+      ["full_solution", "post_submit", null],
+      ["full_solution", "post_submit", null],
+      ["full_solution", "post_submit", null],
+    ]);
+    const recorded = db.current
+      .rows("tutor_turn_metrics")
+      .filter((r) => r.conversation_id === conv)
+      .map((r) => [r.help_level, r.help_worked_step, r.help_signal]);
+    expect(recorded).toEqual([
+      ["hint", null, "walkthrough"],
+      ["worked_step", 1, "step_understood"],
+      ["worked_step", 2, "step_understood"],
+      ["full_solution", null, "step_understood"],
+      ["full_solution", null, "step_understood"],
+      ["full_solution", null, "step_understood"],
+    ]);
+  });
+
+  it("the pre-submit ceiling holds in review: the taps stop at the final worked step", async () => {
+    const conv = seedConversation(Q_MATH); // no answered item: a re-attempt before its answer
+    const bodies = [await turn(conv, "", "walkthrough")];
+    for (let i = 0; i < 4; i++)
+      bodies.push(await turn(conv, "", "step_understood"));
+    expect(bodies.map(sent)).toEqual([
+      ["hint", "pre_submit", null],
+      ["worked_step", "pre_submit", { index: 1, final: false }],
+      ["worked_step", "pre_submit", { index: 2, final: false }],
+      ["worked_step", "pre_submit", { index: 3, final: true }],
+      ["worked_step", "pre_submit", { index: 3, final: true }],
+    ]);
+    for (const b of bodies) expect(b.is_post_submit).toBe(false);
+  });
+
+  it("the pre-submit ceiling holds in practice: 'just solve it' is the final worked step", async () => {
+    await seedHelpKeywords();
+    const conv = seedConversation(Q_MATH, "practice");
+    const body = await turn(conv, "just solve it");
+    expect(sent(body)).toEqual([
+      "worked_step",
+      "pre_submit",
+      { index: 3, final: true },
+    ]);
+  });
+
+  it("post-submit allows level 4: 'just solve it' is the full solution", async () => {
+    await seedHelpKeywords();
+    const conv = seedPostSubmitConversation();
+    expect(sent(await turn(conv, "just solve it"))).toEqual([
+      "full_solution",
+      "post_submit",
+      null,
+    ]);
+  });
+
+  it("'idk' twice moves up two", async () => {
+    await seedHelpKeywords();
+    const conv = seedPostSubmitConversation();
+    const first = await turn(conv, "idk");
+    const second = await turn(conv, "idk");
+    expect(sent(first)).toEqual(["hint", "post_submit", null]);
+    expect(sent(second)).toEqual([
+      "worked_step",
+      "post_submit",
+      { index: 2, final: false },
+    ]);
+  });
+
+  it("a correct typed step moves down one (after submission)", async () => {
+    const conv = seedPostSubmitConversation(); // the key is B
+    await turn(conv, "", "walkthrough");
+    await turn(conv, "", "step_understood");
+    const atStep2 = await turn(conv, "", "step_understood");
+    expect(sent(atStep2)).toEqual([
+      "worked_step",
+      "post_submit",
+      { index: 2, final: false },
+    ]);
+    const typed = await turn(conv, "it's B");
+    expect(sent(typed)).toEqual(["hint", "post_submit", null]);
+    const rows = db.current
+      .rows("tutor_turn_metrics")
+      .filter((r) => r.conversation_id === conv);
+    expect(rows[rows.length - 1]!.help_signal).toBe("correct_step");
+  });
+
+  it("before submission a correct guess moves nothing: no answer oracle", async () => {
+    // A review re-attempt served but not yet answered: pre-submit; the key (B) stays BFF-local.
+    const conv = seedItemConversation(ITEM_SERVED, "served");
+    await turn(conv, "", "walkthrough");
+    const atStep1 = await turn(conv, "", "step_understood");
+    const right = await turn(conv, "it's B");
+    const wrong = await turn(conv, "it's C");
+    expect(sent(right)).toEqual(sent(atStep1));
+    expect(sent(wrong)).toEqual(sent(atStep1));
+    expect(right.correct_answer).toBeNull(); // the key never reaches the worker pre-submit
+    const signals = db.current
+      .rows("tutor_turn_metrics")
+      .filter((r) => r.conversation_id === conv)
+      .map((r) => r.help_signal);
+    expect(signals).toEqual(["walkthrough", "step_understood", "none", "none"]);
+  });
+
+  it("an unreadable previous level: the turn carries no level, and none is recorded", async () => {
+    const conv = seedPostSubmitConversation();
+    await turn(conv, "", "walkthrough");
+    db.current.failNext("tutor_turn_metrics", "select", {
+      message: "connection reset",
+    });
+    const body = await turn(conv, "", "step_understood");
+    expect(body.help_level).toBeUndefined();
+    expect(body.worked_step).toBeUndefined();
+    const rows = db.current
+      .rows("tutor_turn_metrics")
+      .filter((r) => r.conversation_id === conv);
+    expect(rows.map((r) => r.help_level ?? null)).toEqual(["hint", null]);
+    // The ladder resumes from the last level the student actually received.
+    const next = await turn(conv, "", "step_understood");
+    expect(sent(next)).toEqual([
+      "worked_step",
+      "post_submit",
+      { index: 1, final: false },
+    ]);
   });
 });
 
@@ -769,6 +1006,147 @@ describe("crisis screening (ruling 4)", () => {
   });
 });
 
+/**
+ * @spec [owner brief "Crisis classifier: record the failure reason, and look at the timeout",
+ *       Karl 2026-11-08; SCL-276] | @implemented [2026-11-08]
+ * plain English: the 2026-11-05 incident's shape on the real route and the real classifier, with
+ * Vertex answering 429 to the classifier. The turn fails closed exactly as before (force-reviewed;
+ * with no Layer 1 floor, the crisis path), and now the reason and attempts are on the review case
+ * and the turn's metrics row.
+ */
+describe("Layer 2 failure reason (SCL-276)", () => {
+  const CASE_ID = "cccccccc-0000-4000-8000-0000000000c1";
+
+  function classifierFails(status: number): void {
+    generateContent.mockImplementation(
+      async (params: {
+        config?: { systemInstruction?: { parts?: Array<{ text?: string }> } };
+      }) => {
+        const system = params.config?.systemInstruction?.parts?.[0]?.text;
+        if (system === CRISIS_CLASSIFIER_SYSTEM_PROMPT) {
+          classifierCalls += 1;
+          throw Object.assign(new Error(`[${status}] upstream`), { status });
+        }
+        tutorModelCalls += 1;
+        return {
+          candidates: [
+            {
+              finishReason: "STOP",
+              index: 0,
+              content: { role: "model", parts: [{ text: REPLY }] },
+            },
+          ],
+          text: REPLY,
+          usageMetadata: { promptTokenCount: 900, candidatesTokenCount: 20 },
+        };
+      },
+    );
+  }
+
+  function flagCreatesCase(): void {
+    db.current.onRpc("flag_conversation_for_crisis_review", (args) => {
+      db.current.seed("crisis_review_cases", {
+        id: CASE_ID,
+        conversation_id: args.p_conversation_id,
+        student_id: args.p_student_id,
+        source: args.p_source,
+        status: "open",
+        degraded_reason: null,
+        classifier_attempts: null,
+      });
+      return {
+        data: {
+          case_id: CASE_ID,
+          sla_deadline: "2026-11-10T00:00:00.000Z",
+          already_existed: false,
+          case_status: "open",
+          persisted_source: args.p_source,
+        },
+        error: null,
+      };
+    });
+  }
+
+  function metricsRow(conv: string): Record<string, unknown> {
+    const rows = db.current
+      .rows("tutor_turn_metrics")
+      .filter((r) => r.conversation_id === conv);
+    expect(rows).toHaveLength(1);
+    return rows[0]!;
+  }
+
+  it("Layer 1 has signatures: the turn proceeds force-reviewed, as before; the case and the row carry rate_limited, 2 attempts", async () => {
+    db.current.seed("tutor_injection_signatures", {
+      signature_pattern: "a phrase nobody types",
+      signature_type: "crisis",
+      enabled: true,
+      category: "crisis",
+    });
+    classifierFails(429);
+    flagCreatesCase();
+    const conv = seedConversation(Q_MATH);
+    const res = await send(conv, "answer");
+    expect(res.status).toBe(200);
+    expect(classifierCalls).toBe(2); // the attempt and the one retry
+    const flag = db.current.rpcCalls.find(
+      (c) => c.name === "flag_conversation_for_crisis_review",
+    );
+    expect(flag?.args).toMatchObject({ p_source: "classifier_degraded" });
+    expect(
+      db.current.rows("crisis_review_cases").find((r) => r.id === CASE_ID),
+    ).toMatchObject({
+      degraded_reason: "rate_limited",
+      classifier_attempts: 2,
+    });
+    const row = metricsRow(conv);
+    expect(row).toMatchObject({
+      crisis_classifier_outcome: "classifier_degraded",
+      crisis_degraded_reason: "rate_limited",
+      crisis_classifier_attempts: 2,
+    });
+    expect(typeof row.crisis_classifier_ms).toBe("number");
+  });
+
+  it("no Layer 1 floor: fails closed into the crisis path, as before; the case carries upstream_error", async () => {
+    classifierFails(503);
+    flagCreatesCase();
+    const conv = seedConversation(Q_MATH);
+    const res = await send(conv, "answer");
+    expect(res.status).toBe(200);
+    expect(tutorModelCalls).toBe(0); // never "assume safe": no tutoring reply
+    const flag = db.current.rpcCalls.find(
+      (c) => c.name === "flag_conversation_for_crisis_review",
+    );
+    expect(flag?.args).toMatchObject({
+      p_source: "classifier_degraded_no_floor",
+    });
+    expect(
+      db.current.rows("crisis_review_cases").find((r) => r.id === CASE_ID),
+    ).toMatchObject({
+      degraded_reason: "upstream_error",
+      classifier_attempts: 2,
+    });
+  });
+
+  it("a healthy turn records its Layer 2 time and one attempt, and no reason", async () => {
+    const conv = seedConversation(Q_MATH);
+    const res = await send(conv, "what is a slope?");
+    expect(res.status).toBe(200);
+    const row = metricsRow(conv);
+    expect(row).toMatchObject({
+      crisis_classifier_outcome: "no_crisis",
+      crisis_classifier_attempts: 1,
+      crisis_degraded_reason: null,
+    });
+    expect(typeof row.crisis_classifier_ms).toBe("number");
+    expect(
+      db.current.rpcCalls.some(
+        (c) => c.name === "flag_conversation_for_crisis_review",
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("GET /guided-choices", () => {
   async function choices(
     itemId: string,
@@ -780,6 +1158,7 @@ describe("GET /guided-choices", () => {
   }
 
   it("math and Reading and Writing items, Phase B off", async () => {
+    serveLibrary([FORMULA_SHORT, DESMOS_LESSON, RW_LESSON]);
     seedReviewItem(ITEM_MATH, Q_MATH);
     seedReviewItem(ITEM_RW, Q_RW);
     expect((await choices(ITEM_MATH)).body).toEqual({
@@ -792,6 +1171,7 @@ describe("GET /guided-choices", () => {
 
   it("Phase B on adds 'Show me on Desmos' (math) and 'Explain the rule' (Reading and Writing)", async () => {
     await setPhaseB(true);
+    serveLibrary([FORMULA_SHORT, DESMOS_LESSON, RW_LESSON]);
     seedReviewItem(ITEM_MATH, Q_MATH);
     seedReviewItem(ITEM_RW, Q_RW);
     expect((await choices(ITEM_MATH)).body.data.intents).toEqual([
@@ -804,6 +1184,45 @@ describe("GET /guided-choices", () => {
       "walkthrough",
       "explain_rule",
       "video_explanation",
+    ]);
+  });
+
+  // @spec [owner brief "Help-level engine", Karl 2026-11-05, rule 6; SCL-275]: the choices
+  // endpoint checks availability with the tap's own retrieval.
+  it("no approved video for the item's skill: both video choices are hidden", async () => {
+    serveLibrary([]);
+    seedReviewItem(ITEM_MATH, Q_MATH);
+    seedReviewItem(ITEM_RW, Q_RW);
+    expect((await choices(ITEM_MATH)).body.data.intents).toEqual([
+      "walkthrough",
+    ]);
+    expect((await choices(ITEM_RW)).body.data.intents).toEqual(["walkthrough"]);
+  });
+
+  it("no Desmos video: 'Desmos video' is hidden, 'Explanation video' stays", async () => {
+    serveLibrary([FORMULA_SHORT]);
+    seedReviewItem(ITEM_MATH, Q_MATH);
+    expect((await choices(ITEM_MATH)).body.data.intents).toEqual([
+      "walkthrough",
+      "video_explanation",
+    ]);
+  });
+
+  it("a sub-skill-tagged item with no matching approved segment: both hidden, never the skill-only list", async () => {
+    serveLibrary([FORMULA_SHORT, DESMOS_LESSON]);
+    db.current.onRpc("video_segments_for_question", () => ({
+      data: [],
+      error: null,
+    }));
+    db.current.seed("question_sub_skills", {
+      question_id: Q_MATH,
+      sub_skill_id: "EE.5",
+      taxonomy_version: "scl-v1.0.0",
+      tagged_by: "test",
+    });
+    seedReviewItem(ITEM_MATH, Q_MATH);
+    expect((await choices(ITEM_MATH)).body.data.intents).toEqual([
+      "walkthrough",
     ]);
   });
 

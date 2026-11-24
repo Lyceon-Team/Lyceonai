@@ -1223,6 +1223,8 @@ jobs:
             tests/ci/guardian-revoke-party.pg.ci.test.ts \
             tests/ci/guardian-code-not-burned.pg.ci.test.ts \
             tests/ci/guardian-denial-sweep.pg.ci.test.ts \
+            tests/ci/guardian-invites.pg.ci.test.ts \
+            tests/ci/guardian-invite-card.pg.ci.test.ts \
             tests/ci/guardian-admin-denied.pg.ci.test.ts \
             tests/ci/feature-access-map.pg.ci.test.ts \
             tests/ci/crisis-review-queue.ephemeral-pg.proof.test.ts \
@@ -1311,6 +1313,8 @@ jobs:
             --file tests/ci/guardian-revoke-party.pg.ci.test.ts \
             --file tests/ci/guardian-code-not-burned.pg.ci.test.ts \
             --file tests/ci/guardian-denial-sweep.pg.ci.test.ts \
+            --file tests/ci/guardian-invites.pg.ci.test.ts \
+            --file tests/ci/guardian-invite-card.pg.ci.test.ts \
             --file tests/ci/guardian-admin-denied.pg.ci.test.ts \
             --file tests/ci/feature-access-map.pg.ci.test.ts \
             --file tests/ci/crisis-review-queue.ephemeral-pg.proof.test.ts \
@@ -1541,6 +1545,29 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/video-segment-retrieval-gates.sql
+
+      # LISA help-level engine (owner brief "Help-level engine", Karl 2026-11-05; SCL-275): the
+      # help columns on tutor_turn_metrics accept exactly the states the BFF writes, refuse the
+      # rest (including rows a NULL comparison would let through), and the keyword map is seeded.
+      # Same database; one transaction, rolled back.
+      - name: LISA help-level gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/tutor-help-level-gates.sql
+
+      # Crisis classifier failure reason (owner brief 2026-11-08; SCL-276): the review case's and
+      # the turn row's Layer 2 columns accept exactly the states the BFF writes and refuse the rest,
+      # including rows a NULL comparison would let through. Same database; rolled back.
+      - name: Crisis degraded-reason gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/crisis-degraded-reason-gates.sql
 
       - name: Calendar write-RPC gates
         env:

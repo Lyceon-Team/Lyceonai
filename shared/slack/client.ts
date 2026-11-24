@@ -89,6 +89,18 @@ export function escapeMrkdwn(text: string): string {
     .replace(/`(?=`)/g, "`​");
 }
 
+/**
+ * escapeMrkdwn undone: the text a reader copies out of a Slack message, for a file written from
+ * the same text (the worked examples' captions.md record, whose YouTube link carries "&").
+ */
+export function unescapeMrkdwn(text: string): string {
+  return text
+    .replace(/`\u200b/g, "`")
+    .replace(/&gt;/g, ">")
+    .replace(/&lt;/g, "<")
+    .replace(/&amp;/g, "&");
+}
+
 export type FetchLike = (
   input: string,
   init: {
@@ -155,11 +167,15 @@ export async function slackCall<T>(
   throw new SlackCallError(`${method}: ${code}`, code);
 }
 
-/** chat.postMessage, link previews off. Returns the message timestamp. */
+/**
+ * chat.postMessage, link previews off. Returns the message timestamp. With `threadTs` the message
+ * is a reply in that message's thread (the weekly worked-example set, Karl 2026-11-14).
+ */
 export async function postMessage(
   config: SlackConfig,
   text: string,
   fetchImpl: FetchLike,
+  threadTs?: string,
 ): Promise<string> {
   const message = await slackCall(
     fetchImpl,
@@ -171,6 +187,7 @@ export async function postMessage(
         text,
         unfurl_links: false,
         unfurl_media: false,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
       },
     },
     postMessageOk,

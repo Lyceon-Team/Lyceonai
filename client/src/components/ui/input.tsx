@@ -16,7 +16,9 @@ import { cn } from "@/lib/utils";
  */
 export const LYC_INPUT = `${LYC_FOCUS} h-[46px] w-full rounded-md border border-lyc-input-bd bg-lyc-sheet px-3.5 text-[17px] font-normal text-lyc-ink`;
 
-const inputVariants = {
+// Exported so a composite field (BirthdayFields' native <select>) can wear the SAME class
+// as the Input it sits beside, rather than a second copy of it.
+export const inputVariants = {
   default:
     "flex h-11 w-full rounded-lg border-2 border-border bg-card px-4 py-2 text-base text-foreground ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warm-gray-800 focus-visible:ring-offset-2 focus-visible:border-border disabled:cursor-not-allowed disabled:opacity-50 transition-colors md:text-sm",
   lyc: `${LYC_INPUT} flex placeholder:text-lyc-muted disabled:cursor-not-allowed disabled:opacity-60`,

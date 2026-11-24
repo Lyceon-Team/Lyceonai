@@ -249,7 +249,10 @@ export function DeleteAccountCard() {
                 if (confirmed) deleteMutation.mutate();
               }}
               disabled={!confirmed || deleteMutation.isPending}
-              className="bg-red-600 hover:bg-red-700"
+              // Was `bg-red-600 hover:bg-red-700`: a raw palette colour, written because the
+              // default variant's own fill was invisible (the `--primary` defect). The token
+              // says this now.
+              variant="destructive"
               data-testid="delete-account-confirm"
             >
               {deleteMutation.isPending ? "Scheduling…" : "Delete my account"}

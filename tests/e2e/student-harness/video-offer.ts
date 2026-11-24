@@ -11,7 +11,11 @@
  * harness never runs a tutor turn (server.ts), so this is the one hop the spec stands in for.
  *
  * run: pnpm exec tsx --import ./tests/e2e/student-harness/register.mjs \
- *        tests/e2e/student-harness/video-offer.ts <out.json>
+ *        tests/e2e/student-harness/video-offer.ts <out.json> [segment]
+ *
+ * `segment` (Phase C follow-up, Karl 2026-11-04): the same video served on the segment path, as
+ * production served it on 2026-11-03 (EE.3, 0:00–2:39 of 6:38): the row carries the segment's
+ * start, end and id, and the action carries them to the client.
  * (the module hooks stub the Supabase client the retrieval module imports; nothing is queried).
  * A file, not stdout: a test-side file that imports tutor code never prints
  * (tests/ci/test-logs-no-tutor-content.guard.test.ts).
@@ -35,15 +39,25 @@ const row = rows.find((r) => r.video_id === DESMOS_LESSON_ID && r.approve);
 if (row === undefined) {
   throw new Error(`${DESMOS_LESSON_ID} is not an approved library video`);
 }
+/** Production's EE.3 segment of Lesson #10 (2026-11-03 10:05 UTC): 0–159 of 398. */
+export const SEGMENT = {
+  segment_id: "5e9a0000-0000-4000-8000-000000000000",
+  start_seconds: 0,
+  end_seconds: 159,
+};
+const asSegment = process.argv[3] === "segment";
 const offered = [
   libraryVideoSchema.parse({
     video_id: row.video_id,
     title: row.title,
     channel_name: row.channel_name,
     duration_seconds: row.duration_seconds,
-    start_seconds: row.start_seconds,
+    start_seconds: asSegment ? SEGMENT.start_seconds : row.start_seconds,
     methods: row.methods,
     format: row.format,
+    ...(asSegment
+      ? { end_seconds: SEGMENT.end_seconds, segment_id: SEGMENT.segment_id }
+      : {}),
   }),
 ];
 const action = resolveVideoAction(
