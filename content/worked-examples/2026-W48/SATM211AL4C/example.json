@@ -5,7 +5,7 @@
   "hook": {
     "type": "speed",
     "line": "Store A: up 60%, then 25% off. Store B: up 20%. Which costs more?",
-    "voice": "Think you can do this one without touching the hundred and forty? There's a shortcut."
+    "voice": "Can you do this without using the hundred and forty? There's a shortcut."
   },
   "question_voice": "Two stores, the same item, different markups and a sale, and we want the gap in price.",
   "signature_move": "Turn each percent change into a multiplier.",
@@ -30,7 +30,7 @@
   "answer": {
     "letter": "A",
     "notepad": "Answer: A) 0",
-    "voice": "The difference is zero. That's A. Quick check: one forty times one point two is one sixty-eight at both stores."
+    "voice": "Zero. That's A. Quick check: one forty times one point two is one sixty-eight at both stores."
   },
   "trap": {
     "summary": "Subtracting the percents (60 − 25 = 35, more than 20) and concluding Store A charges more, so choosing a nonzero difference.",
