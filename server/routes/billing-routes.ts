@@ -730,8 +730,13 @@ router.post(
         ? [sessionParams, withCodeFieldInstead(sessionParams)]
         : [sessionParams];
       let session: Stripe.Checkout.Session | null = null;
+      // Whether the session that was created carries the linked code (post-ALPHA brief, Karl
+      // 2026-11-11, item 3): only then is it "applied". A code that was not found, or that Stripe
+      // refused so the retry went without it, is "unavailable", and the page says so.
+      let promoApplied = false;
       for (const [index, params] of attempts.entries()) {
         try {
+          promoApplied = params.discounts !== undefined;
           session = await stripe.checkout.sessions.create(params, {
             idempotencyKey: checkoutIdempotencyKey({
               subjectProfileId: subjectStudentId,
@@ -792,6 +797,10 @@ router.post(
         kind: "checkout_session",
         url: session.url,
         sessionId: session.id,
+        // Only when a code was linked; a checkout without one carries no `promo` at all.
+        ...(parsed.data.promo
+          ? { promo: promoApplied ? "applied" : "unavailable" }
+          : {}),
         requestId,
       });
     } catch (err: unknown) {

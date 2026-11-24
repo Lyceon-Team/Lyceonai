@@ -113,8 +113,8 @@ export function answerSourceForMode(mode: string): FunnelAnswerSource {
 }
 
 /**
- * `upgraded.via` (Karl, 2026-10-21): a discount whose coupon is 100% off is the founding code
- * (`alpha`), whoever paid; otherwise a payer other than the student is a guardian
+ * `upgraded.via` (Karl, 2026-10-21): a discount whose coupon is 100% off is a free code
+ * (`alpha`, the value's historical name; any 100%-off code counts), whoever paid; otherwise a payer other than the student is a guardian
  * (`guardian_paid`); otherwise the student paid (`paid`). Reads the subscription's `discounts`
  * as Stripe returns them with `discounts.source.coupon` expanded. Returns null when the discounts
  * cannot be read (an unexpanded coupon, an unknown shape): unknown is never guessed.

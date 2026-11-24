@@ -41,9 +41,9 @@ export function GuardianNoStudents({
     >
       <h1 className="text-2xl font-semibold">Add your first student</h1>
       <p className="mx-auto max-w-xl text-base text-muted-foreground">
-        Ask your student for the 6-character link code on their Profile page,
-        under Settings. Once linked, you&rsquo;ll see their progress, study
-        calendar and test results here.
+        Ask your student for the 6-character link code in their Settings, under
+        Guardian. Once linked, you&rsquo;ll see their progress, study calendar
+        and test results here.
       </p>
       <Button
         className="mx-auto min-h-[48px] px-6 text-base"

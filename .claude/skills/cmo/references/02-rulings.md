@@ -151,6 +151,7 @@ Karl's rulings from the content session of 2026-10-28 → 2026-11-02. They super
 - Cohort email priority: code → Discord/invite friends → diagnostic or practice for a baseline → study plan → other features (2026-10-10).
 - Non-US cohort members keep access; the goal is engagement (2026-10-10).
 - Upgrade links land directly on checkout with the code applied; collect no extra personal info at checkout (2026-10-10).
+- The cohort code closed 2026-11-11 (cap reached; expires 2026-11-15). Public surfaces never name a code; new codes go out one-to-one. A student dropped from the December cohort only has emails paused, silently; account, progress and any free Pro stay (2026-11-11).
 
 ## 13. Open decisions (not yet ruled)
 

@@ -797,6 +797,7 @@ describe.skipIf(!PG_AVAILABLE)("email send gate → real PG", () => {
         "public.email_gate_decide(uuid, text, timestamptz)",
         "public.record_campaign_send(text, text, text, timestamptz, text)",
         "public.email_gate_keep_posted(uuid, timestamptz)",
+        "public.email_gate_pause_profiles(uuid[], text, boolean, timestamptz)",
       ]) {
         const r = await pg.query<{ ok: boolean }>(
           `SELECT has_function_privilege($1, $2, 'EXECUTE') AS ok`,
@@ -1449,6 +1450,212 @@ describe.skipIf(!PG_AVAILABLE)("email send gate → real PG", () => {
         (await decide(complained.id, "exam_score_report_requested", day(1.5)))
           .allow,
       ).toBe(true);
+    });
+  });
+
+  /**
+   * The silent bulk pause (post-ALPHA brief, Karl 2026-11-11, item 4; SCL-281). Each `it` name is
+   * the anchor a plant in scripts/ci/email-gate.mutations.sh (G76-G87) reddens.
+   */
+  describe("BP: the silent bulk pause", () => {
+    const REASON = "cohort_drop_2026_11_16";
+    type BulkResult = {
+      dry_run: boolean;
+      reason: string;
+      to_pause: string[];
+      already_paused: string[];
+      not_student: string[];
+      no_profile: string[];
+      guardian_digest_pauses: number;
+    };
+    async function bulk(
+      ids: string[],
+      opts: { dryRun?: boolean; at?: Date; reason?: string } = {},
+    ): Promise<BulkResult> {
+      return h.asProbe(async () => {
+        const r =
+          opts.dryRun === undefined
+            ? await pg.query<{ r: BulkResult }>(
+                `SELECT public.email_gate_pause_profiles($1::uuid[], $2) AS r`,
+                [ids, opts.reason ?? REASON],
+              )
+            : await pg.query<{ r: BulkResult }>(
+                `SELECT public.email_gate_pause_profiles($1::uuid[], $2, $3, $4::timestamptz) AS r`,
+                [
+                  ids,
+                  opts.reason ?? REASON,
+                  opts.dryRun,
+                  (opts.at ?? day(2)).toISOString(),
+                ],
+              );
+        return r.rows[0]!.r;
+      });
+    }
+    async function transitions(
+      id: string,
+    ): Promise<
+      { from_state: string; to_state: string; actor: string; reason: string }[]
+    > {
+      const r = await pg.query(
+        `SELECT from_state, to_state, actor, reason FROM public.email_gate_transitions
+          WHERE profile_id = $1 ORDER BY id`,
+        [id],
+      );
+      return r.rows;
+    }
+    async function guardianRefresh(
+      at: Date,
+    ): Promise<{ opened: number; closed: number }> {
+      return h.asProbe(async () => {
+        const r = await pg.query<{ r: { opened: number; closed: number } }>(
+          `SELECT public.email_gate_guardian_refresh($1::timestamptz) AS r`,
+          [at.toISOString()],
+        );
+        return r.rows[0]!.r;
+      });
+    }
+    async function parentPauseEmails(kidId: string): Promise<number> {
+      return count(
+        `SELECT count(*)::int AS n FROM public.notification_events
+          WHERE event_type = 'email_gate_guardian_paused' AND subject_profile_id = $1`,
+        [kidId],
+      );
+    }
+    async function digestPauses(
+      parentId: string,
+      kidId: string,
+    ): Promise<{ episode: number; resume_reason: string | null }[]> {
+      const r = await pg.query(
+        `SELECT episode, resume_reason FROM public.email_gate_guardian_pauses
+          WHERE guardian_id = $1 AND student_id = $2 ORDER BY episode`,
+        [parentId, kidId],
+      );
+      return r.rows;
+    }
+    async function outboxOf(
+      id: string,
+    ): Promise<{ email_state: string; enqueued_at: Date }[]> {
+      const r = await pg.query(
+        `SELECT email_state, enqueued_at FROM public.email_gate_resend_outbox WHERE profile_id = $1`,
+        [id],
+      );
+      return r.rows;
+    }
+
+    let kid: { id: string; email: string };
+    let parent: { id: string; email: string };
+    beforeAll(async () => {
+      kid = await student();
+      parent = await student({ role: "guardian", dob: null });
+      await h.entitle(kid.id, D0);
+      await pg.query(
+        `INSERT INTO public.guardian_links (guardian_profile_id, student_profile_id, status, initiated_by, initiated_at, accepted_at)
+         VALUES ($1, $2, 'active', 'student', now(), now())`,
+        [parent.id, kid.id],
+      );
+      await h.answer(kid.id, 1, day(1));
+    });
+
+    it("BP1: the default is a dry run: it lists who would change and writes nothing", async () => {
+      const already = await pausedStudent();
+      const unknown = "00000000-0000-4000-8000-00000000b001";
+      const before = await count(
+        `SELECT count(*)::int AS n FROM public.email_gate_transitions WHERE profile_id = $1`,
+        [kid.id],
+      );
+      const r = await bulk([kid.id, kid.id, already.id, parent.id, unknown]);
+      expect(r).toEqual({
+        dry_run: true,
+        reason: REASON,
+        to_pause: [kid.id],
+        already_paused: [already.id],
+        not_student: [parent.id],
+        no_profile: [unknown],
+        guardian_digest_pauses: 1,
+      });
+      expect(
+        await count(
+          `SELECT count(*)::int AS n FROM public.email_gate_transitions WHERE profile_id = $1`,
+          [kid.id],
+        ),
+      ).toBe(before);
+      expect((await stateRow(kid.id))?.state ?? "active").not.toBe("paused");
+      expect(await digestPauses(parent.id, kid.id)).toEqual([]);
+      expect(await outboxOf(kid.id)).toEqual([]);
+    });
+
+    it("BP2: the real run pauses silently: the reason is recorded, no pause note, no parent pause email", async () => {
+      const r = await bulk([kid.id], { dryRun: false, at: day(2) });
+      expect(r.to_pause).toEqual([kid.id]);
+      expect(await stateRow(kid.id)).toMatchObject({
+        state: "paused",
+        pause_episode: 1,
+      });
+      expect(await transitions(kid.id)).toContainEqual({
+        from_state: "active",
+        to_state: "paused",
+        actor: "bulk_pause",
+        reason: REASON,
+      });
+      expect(await decide(kid.id, "review_ask", day(2.5))).toMatchObject({
+        allow: false,
+        reason: "paused",
+      });
+      expect(await pauseNotes(kid.id)).toBe(0);
+      // The parent's digest pause is open, with no email; the nightly pass sends none later.
+      expect(await digestPauses(parent.id, kid.id)).toEqual([
+        { episode: 1, resume_reason: null },
+      ]);
+      await guardianRefresh(day(12));
+      expect(await parentPauseEmails(kid.id)).toBe(0);
+      // Sticky: the gate's own refresh keeps it paused, still without a note.
+      expect(await refresh(kid.id, day(12))).toBe("paused");
+      expect(await pauseNotes(kid.id)).toBe(0);
+    });
+
+    it("BP3: idempotent: a second run changes nothing and writes nothing", async () => {
+      const t = (await transitions(kid.id)).length;
+      const queued = await outboxOf(kid.id);
+      const r = await bulk([kid.id], { dryRun: false, at: day(3) });
+      expect(r.to_pause).toEqual([]);
+      expect(r.already_paused).toEqual([kid.id]);
+      expect(r.guardian_digest_pauses).toBe(0);
+      expect(await transitions(kid.id)).toHaveLength(t);
+      expect(await digestPauses(parent.id, kid.id)).toHaveLength(1);
+      expect(await outboxOf(kid.id)).toEqual(queued);
+      expect((await stateRow(kid.id))?.pause_episode).toBe(1);
+    });
+
+    it("BP4: the Resend mirror is queued as paused, never for an under-13", async () => {
+      expect(await outboxOf(kid.id)).toMatchObject([{ email_state: "paused" }]);
+      const young = await student({ dob: yearsAgo(11) });
+      const r = await bulk([young.id], { dryRun: false, at: day(2) });
+      expect(r.to_pause).toEqual([young.id]);
+      expect((await stateRow(young.id))?.state).toBe("paused");
+      expect(await outboxOf(young.id)).toEqual([]);
+    });
+
+    it("BP5: wake-up is unchanged: activity after the pause makes the student active and resumes the digest", async () => {
+      await h.answer(kid.id, 1, day(13));
+      expect(await refresh(kid.id, day(13.5))).toBe("active");
+      await guardianRefresh(day(13.5));
+      expect(await digestPauses(parent.id, kid.id)).toEqual([
+        { episode: 1, resume_reason: "student_active" },
+      ]);
+      expect(await parentPauseEmails(kid.id)).toBe(0);
+    });
+
+    it("BP6: a bad reason, an empty list or an oversized list is refused", async () => {
+      await expect(
+        bulk([kid.id], { reason: "Cohort Drop!" }),
+      ).rejects.toThrow(/reason must be/);
+      await expect(bulk([])).rejects.toThrow(/no profile ids/);
+      const many = Array.from(
+        { length: 1001 },
+        (_, i) =>
+          `00000000-0000-4000-8000-${(i + 1).toString(16).padStart(12, "0")}`,
+      );
+      await expect(bulk(many)).rejects.toThrow(/at most 1000/);
     });
   });
 });

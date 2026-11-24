@@ -1371,7 +1371,7 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
       "owner": "07A V1.0",
       "V1_active": true,
       "schema_version": "1.0.0",
-      "description": "Server-side funnel (Karl, 2026-10-21): the student's entitlement became active for the first time. Sent once ever. How (a 100%-off founding code, a guardian's payment, or their own) and whole days since the account was created; never an amount, a Stripe id or the payer.",
+      "description": "Server-side funnel (Karl, 2026-10-21): the student's entitlement became active for the first time. Sent once ever. How (a 100%-off code, a guardian's payment, or their own) and whole days since the account was created; never an amount, a Stripe id or the payer.",
       "json_schema": {
         "type": "object",
         "additionalProperties": false,

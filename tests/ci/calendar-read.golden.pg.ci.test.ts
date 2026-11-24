@@ -125,15 +125,28 @@ async function seedFixture(): Promise<void> {
     `INSERT INTO public.profiles (id, email, role) VALUES ($1, 'cal-golden@example.test', 'student')`,
     [S],
   );
-  await q(
-    `INSERT INTO public.student_study_profile
-       (student_id, timezone, target_exam_date, target_score, study_days_mask, daily_minutes,
-        full_length_weekday, full_length_interval_weeks, setup_completed_at,
-        last_acknowledged_nonstudent_version_no)
-     VALUES ($1, 'America/Chicago', '2026-11-07', 1400, 62, 60, 6, 2,
-             '2026-09-10T12:00:00Z', 1)`,
-    [S],
-  );
+  // THE ROW AS IT STOOD AT NOW, NOT AS THE WALL CLOCK WOULD WRITE IT TODAY. The BEFORE INSERT
+  // trigger `study_profile_exam_dates_sync` derives `target_exam_date` from the real date
+  // (`study_profile_today()` reads now()), so once 2026-11-07 passed it stored NULL and these
+  // goldens went red on every branch with no code change. Every read here runs at the fixed NOW
+  // (2026-09-19), when the trigger would have stored exactly these two values; the trigger is
+  // bypassed for this one insert (the `replica` pattern of getting-started.pg.ci.test.ts) and
+  // both columns are written as it would have written them. The trigger's own rules are tested
+  // where it is defined; this file pins the read.
+  await q(`SET session_replication_role = replica`);
+  try {
+    await q(
+      `INSERT INTO public.student_study_profile
+         (student_id, timezone, target_exam_date, target_exam_dates, target_score, study_days_mask,
+          daily_minutes, full_length_weekday, full_length_interval_weeks, setup_completed_at,
+          last_acknowledged_nonstudent_version_no)
+       VALUES ($1, 'America/Chicago', '2026-11-07', ARRAY['2026-11-07']::date[], 1400, 62,
+               60, 6, 2, '2026-09-10T12:00:00Z', 1)`,
+      [S],
+    );
+  } finally {
+    await q(`SET session_replication_role = origin`);
+  }
 
   // ── Versions ──────────────────────────────────────────────────────────────
   const version = (
