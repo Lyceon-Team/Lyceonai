@@ -1,0 +1,42 @@
+{
+  "question_id": "SATM241DWOZ",
+  "skill_code": "Probability and Conditional Probability",
+  "post_on": "2026-11-30",
+  "hook": {
+    "type": "contrarian",
+    "line": "Two dice, a sum of at least 9. Chance of a 6? Forget the 36 rolls…",
+    "voice": "Most people count all thirty-six rolls on this one. Here's why that's wrong."
+  },
+  "question_voice": "Two dice, and we already know the total is nine or more. What are the chances of a six?",
+  "signature_move": "Shrink the sample space to what you're given, then count.",
+  "steps": [
+    {
+      "notepad": "total ≥ 9: 10 rolls",
+      "voice": "Shrink the world first. Three-six, four-five, five-four, six-three, then the tens, the elevens and double six. Ten rolls."
+    },
+    {
+      "notepad": "with a 6: 7 of them",
+      "voice": "Now keep the ones with a six. Three-six, six-three, four-six, six-four, five-six, six-five, and double six. Seven."
+    },
+    {
+      "notepad": "P = 7/10",
+      "voice": "Seven of the ten we kept."
+    }
+  ],
+  "answer": {
+    "letter": "D",
+    "notepad": "Answer: D) 7/10",
+    "voice": "Seven tenths. That's D. Quick check: it's between zero and one, and the three rolls without a six, four-five, five-four and five-five, make up the rest."
+  },
+  "trap": {
+    "summary": "Dividing by all 36 outcomes instead of the 10 left after the condition, and choosing 7/36.",
+    "notepad": [
+      "7/36 → A ✗",
+      "given: only 10 rolls left",
+      "7/10 ✓"
+    ],
+    "voice": "The trap is dividing by thirty-six. Once you're told the total is nine or more, only ten rolls are left. That's A, and it ignores what you were given."
+  },
+  "check": "7 rolls with a 6 plus 3 without (4+5, 5+4, 5+5) make the 10 rolls with a total of 9 or more.",
+  "takeaway": "Given that: count only inside what you're given."
+}
