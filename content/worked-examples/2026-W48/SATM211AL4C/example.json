@@ -30,7 +30,7 @@
   "answer": {
     "letter": "A",
     "notepad": "Answer: A) 0",
-    "voice": "Zero. That's A. Quick check: one forty times one point two is one sixty-eight at both stores."
+    "voice": "Zero. That's A. Quick check: one hundred forty times one point two is one hundred sixty-eight at both stores."
   },
   "trap": {
     "summary": "Subtracting the percents (60 − 25 = 35, more than 20) and concluding Store A charges more, so choosing a nonzero difference.",
