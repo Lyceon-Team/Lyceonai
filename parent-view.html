@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lyceon — Guardian Dashboard</title>
+<style>
+  /* ── Reset & base ─────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #FFFAEF;
+    --fg:          #0F2E48;
+    --card:        #F9F3E7;
+    --card-fg:     #0F2E48;
+    --primary:     #0F2E48;
+    --primary-fg:  #FFFAEF;
+    --muted:       #F0EAE0;
+    --muted-fg:    rgba(15, 46, 72, 0.7);
+    --border:      rgba(15, 46, 72, 0.12);
+    --cream-200:   hsl(40, 25%, 92%);
+    --cream-300:   hsl(40, 20%, 85%);
+
+    /* mastery level fills */
+    --lv0-fill: #f59e0b; --lv0-bg: #fef3c7; --lv0-ink: #78350f; --lv0-bd: #fde68a;
+    --lv1-fill: #f97316; --lv1-bg: #ffedd5; --lv1-ink: #7c2d12; --lv1-bd: #fed7aa;
+    --lv2-fill: #0ea5e9; --lv2-bg: #e0f2fe; --lv2-ink: #0c4a6e; --lv2-bd: #bae6fd;
+    --lv3-fill: #2563eb; --lv3-bg: #dbeafe; --lv3-ink: #1e3a8a; --lv3-bd: #bfdbfe;
+    --lv4-fill: #059669; --lv4-bg: #d1fae5; --lv4-ink: #064e3b; --lv4-bd: #a7f3d0;
+    --seg-empty: #eae0cb;
+  }
+
+  html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Guardian shell header ───────────────────────────────── */
+  .g-header {
+    position: sticky; top: 0; z-index: 50;
+    width: 100%;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255, 250, 239, 0.95);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .g-header-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .g-logo { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--fg); }
+  .g-logo-mark {
+    width: 36px; height: 36px;
+    background: var(--primary);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--primary-fg);
+    font-weight: 800; font-size: 18px;
+  }
+  .g-logo-text { font-weight: 700; font-size: 18px; }
+  .g-logo-role { font-weight: 600; font-size: 16px; color: var(--muted-fg); margin-left: 2px; }
+  .g-header-right { display: flex; align-items: center; gap: 10px; }
+  .g-student-name {
+    font-weight: 600; font-size: 16px;
+    background: var(--muted);
+    padding: 5px 14px;
+    border-radius: 999px;
+  }
+  .g-avatar {
+    width: 34px; height: 34px;
+    border-radius: 999px;
+    background: var(--primary);
+    color: var(--primary-fg);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px;
+  }
+
+  /* ── Main content column ─────────────────────────────────── */
+  .g-main {
+    flex: 1;
+    max-width: 540px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 20px 16px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ── Score strip (phone layout) ──────────────────────────── */
+  .score-projected {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    border-radius: 20px;
+    background: var(--primary);
+    color: var(--primary-fg);
+    padding: 22px 18px;
+    text-align: center;
+  }
+  .score-projected-label { font-size: 16px; font-weight: 500; opacity: 0.85; }
+  .score-projected-value { font-size: 40px; font-weight: 700; line-height: 1.1; }
+  .score-projected-sub   { font-size: 16px; opacity: 0.85; }
+
+  .score-compact-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    text-align: center;
+  }
+  .score-compact-tile {
+    border-radius: 16px;
+    border: 1px solid var(--cream-300);
+    background: var(--card);
+    padding: 14px 6px;
+  }
+  .score-compact-label { font-size: 16px; color: var(--muted-fg); font-weight: 500; margin-bottom: 4px; }
+  .score-compact-value { font-size: 22px; font-weight: 700; }
+
+  /* ── Week plan bar ───────────────────────────────────────── */
+  .week-plan {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    border-radius: 20px;
+    border: 1px solid var(--cream-300);
+    background: var(--card);
+    padding: 18px 24px;
+    text-align: center;
+  }
+  .week-plan-label { font-size: 16px; font-weight: 500; color: var(--muted-fg); }
+  .week-plan-summary { font-size: 20px; font-weight: 700; }
+  .week-plan-bar {
+    display: flex;
+    width: 100%;
+    gap: 5px;
+  }
+  .week-plan-seg {
+    height: 14px;
+    flex: 1;
+    border-radius: 7px;
+  }
+  .week-plan-seg--done { background: var(--primary); }
+  .week-plan-seg--todo { background: var(--cream-300); }
+
+  /* ── Mastery card ────────────────────────────────────────── */
+  .mastery-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-radius: 18px;
+    border: 1px solid var(--cream-300);
+    background: #ffffff;
+    padding: 18px 16px;
+  }
+  .mastery-heading {
+    font-size: 19px; font-weight: 700;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+  .mastery-section-label {
+    padding: 10px 0 2px;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted-fg);
+  }
+  .mastery-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-top: 1px solid var(--cream-200);
+    padding: 12px 0;
+  }
+  .mastery-row-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .mastery-domain-name { font-size: 16px; font-weight: 500; }
+  .mastery-pill {
+    white-space: nowrap;
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .mastery-meter {
+    display: flex;
+    width: 100%;
+    gap: 4px;
+  }
+  .mastery-seg {
+    height: 8px;
+    flex: 1;
+    border-radius: 5px;
+  }
+  .mastery-seg--empty { background: var(--muted); }
+
+  /* pill color helpers */
+  .pill-L0 { background: var(--lv0-bg); color: var(--lv0-ink); }
+  .pill-L1 { background: var(--lv1-bg); color: var(--lv1-ink); }
+  .pill-L2 { background: var(--lv2-bg); color: var(--lv2-ink); }
+  .pill-L3 { background: var(--lv3-bg); color: var(--lv3-ink); }
+  .pill-L4 { background: var(--lv4-bg); color: var(--lv4-ink); }
+  .pill-unmeasured { background: transparent; color: var(--muted-fg); border: 1px dashed hsl(40, 20%, 73%); }
+
+  /* segment fill colors */
+  .seg-L0 { background: var(--lv0-fill); }
+  .seg-L1 { background: var(--lv1-fill); }
+  .seg-L2 { background: var(--lv2-fill); }
+  .seg-L3 { background: var(--lv3-fill); }
+  .seg-L4 { background: var(--lv4-fill); }
+
+  /* ── Latest test card ────────────────────────────────────── */
+  .test-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    border-radius: 22px;
+    border: 1px solid var(--cream-300);
+    background: #ffffff;
+    padding: 28px 30px;
+    text-align: center;
+  }
+  .test-card-heading { font-size: 20px; font-weight: 700; }
+  .test-card-meta { font-size: 16px; color: var(--muted-fg); }
+  .test-card-total { font-size: 56px; font-weight: 700; line-height: 1; }
+  .test-card-change {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .test-sections {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    width: 100%;
+  }
+  .test-section-tile {
+    border-radius: 14px;
+    background: var(--card);
+    padding: 14px 16px;
+    text-align: center;
+  }
+  .test-section-label { font-size: 16px; color: var(--muted-fg); }
+  .test-section-score { font-size: 26px; font-weight: 700; }
+  .test-card-link {
+    font-size: 16px;
+    font-weight: 600;
+    text-decoration: underline;
+    color: var(--fg);
+  }
+
+  /* ── Legend row ───────────────────────────────────────────── */
+  .mastery-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    padding: 6px 0 2px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 14px;
+    color: var(--muted-fg);
+  }
+  .legend-swatch {
+    width: 12px; height: 12px;
+    border-radius: 3px;
+  }
+  .legend-swatch--unmeasured {
+    background: transparent;
+    border: 1.5px dashed hsl(40, 20%, 73%);
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ Guardian shell header ═══════════════════════════════ -->
+<header class="g-header">
+  <div class="g-header-inner">
+    <div class="g-logo">
+      <div class="g-logo-mark">L</div>
+      <span class="g-logo-text">Lyceon</span>
+      <span class="g-logo-role">Guardian</span>
+    </div>
+    <div class="g-header-right">
+      <span class="g-student-name">Maya R.</span>
+      <div class="g-avatar">JR</div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ Dashboard content ═══════════════════════════════════ -->
+<main class="g-main">
+
+  <!-- ── Score strip (phone layout) ───────────────────────── -->
+  <div class="score-projected">
+    <div class="score-projected-label">Projected SAT score</div>
+    <div class="score-projected-value">1180–1340</div>
+    <div class="score-projected-sub">R&W 580–660 &middot; Math 600–680</div>
+  </div>
+
+  <div class="score-compact-row">
+    <div class="score-compact-tile">
+      <div class="score-compact-label">Target</div>
+      <div class="score-compact-value">1400</div>
+    </div>
+    <div class="score-compact-tile">
+      <div class="score-compact-label">Test</div>
+      <div class="score-compact-value">42 days</div>
+    </div>
+    <div class="score-compact-tile">
+      <div class="score-compact-label">Streak</div>
+      <div class="score-compact-value">12 days</div>
+    </div>
+  </div>
+
+  <!-- ── Week plan ────────────────────────────────────────── -->
+  <section class="week-plan">
+    <div class="week-plan-label">This week's plan</div>
+    <div class="week-plan-summary">4 of 6 sessions done</div>
+    <div class="week-plan-bar">
+      <div class="week-plan-seg week-plan-seg--done"></div>
+      <div class="week-plan-seg week-plan-seg--done"></div>
+      <div class="week-plan-seg week-plan-seg--done"></div>
+      <div class="week-plan-seg week-plan-seg--done"></div>
+      <div class="week-plan-seg week-plan-seg--todo"></div>
+      <div class="week-plan-seg week-plan-seg--todo"></div>
+    </div>
+  </section>
+
+  <!-- ── Mastery by domain ────────────────────────────────── -->
+  <section class="mastery-card">
+    <div class="mastery-heading">Mastery by domain</div>
+
+    <!-- Legend -->
+    <div class="mastery-legend">
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--lv0-fill)"></span>Foundations</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--lv1-fill)"></span>Building</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--lv2-fill)"></span>Developing</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--lv3-fill)"></span>Proficient</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--lv4-fill)"></span>Strong</span>
+      <span class="legend-item"><span class="legend-swatch legend-swatch--unmeasured"></span>Unmeasured</span>
+    </div>
+
+    <!-- Reading and Writing -->
+    <div class="mastery-section-label">Reading and Writing</div>
+
+    <!-- Craft and Structure — L2 (Developing, 3/5) -->
+    <div class="mastery-row">
+      <div class="mastery-row-top">
+        <span class="mastery-domain-name">Craft and Structure</span>
+        <span class="mastery-pill pill-L2">Developing</span>
+      </div>
+      <div class="mastery-meter">
+        <span class="mastery-seg seg-L2"></span>
+        <span class="mastery-seg seg-L2"></span>
+        <span class="mastery-seg seg-L2"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+      </div>
+    </div>
+
+    <!-- Information and Ideas — L3 (Proficient, 4/5) -->
+    <div class="mastery-row">
+      <div class="mastery-row-top">
+        <span class="mastery-domain-name">Information and Ideas</span>
+        <span class="mastery-pill pill-L3">Proficient</span>
+      </div>
+      <div class="mastery-meter">
+        <span class="mastery-seg seg-L3"></span>
+        <span class="mastery-seg seg-L3"></span>
+        <span class="mastery-seg seg-L3"></span>
+        <span class="mastery-seg seg-L3"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+      </div>
+    </div>
+
+    <!-- Standard English Conventions — L1 (Building, 2/5) -->
+    <div class="mastery-row">
+      <div class="mastery-row-top">
+        <span class="mastery-domain-name">Standard English Conventions</span>
+        <span class="mastery-pill pill-L1">Building</span>
+      </div>
+      <div class="mastery-meter">
+        <span class="mastery-seg seg-L1"></span>
+        <span class="mastery-seg seg-L1"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+      </div>
+    </div>
+
+    <!-- Expression of Ideas — L2 (Developing, 3/5) -->
+    <div class="mastery-row">
+      <div class="mastery-row-top">
+        <span class="mastery-domain-name">Expression of Ideas</span>
+        <span class="mastery-pill pill-L2">Developing</span>
+      </div>
+      <div class="mastery-meter">
+        <span class="mastery-seg seg-L2"></span>
+        <span class="mastery-seg seg-L2"></span>
+        <span class="mastery-seg seg-L2"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+      </div>
+    </div>
+
+    <!-- Math -->
+    <div class="mastery-section-label">Math</div>
+
+    <!-- Algebra — L3 (Proficient, 4/5) -->
+    <div class="mastery-row">
+      <div class="mastery-row-top">
+        <span class="mastery-domain-name">Algebra</span>
+        <span class="mastery-pill pill-L3">Proficient</span>
+      </div>
+      <div class="mastery-meter">
+        <span class="mastery-seg seg-L3"></span>
+        <span class="mastery-seg seg-L3"></span>
+        <span class="mastery-seg seg-L3"></span>
+        <span class="mastery-seg seg-L3"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+      </div>
+    </div>
+
+    <!-- Advanced Math — L1 (Building, 2/5) -->
+    <div class="mastery-row">
+      <div class="mastery-row-top">
+        <span class="mastery-domain-name">Advanced Math</span>
+        <span class="mastery-pill pill-L1">Building</span>
+      </div>
+      <div class="mastery-meter">
+        <span class="mastery-seg seg-L1"></span>
+        <span class="mastery-seg seg-L1"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+      </div>
+    </div>
+
+    <!-- Problem Solving and Data Analysis — L0 (Foundations, 1/5) -->
+    <div class="mastery-row">
+      <div class="mastery-row-top">
+        <span class="mastery-domain-name">Problem Solving and Data Analysis</span>
+        <span class="mastery-pill pill-L0">Foundations</span>
+      </div>
+      <div class="mastery-meter">
+        <span class="mastery-seg seg-L0"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+      </div>
+    </div>
+
+    <!-- Geometry and Trigonometry — L2 (Developing, 3/5) -->
+    <div class="mastery-row">
+      <div class="mastery-row-top">
+        <span class="mastery-domain-name">Geometry and Trigonometry</span>
+        <span class="mastery-pill pill-L2">Developing</span>
+      </div>
+      <div class="mastery-meter">
+        <span class="mastery-seg seg-L2"></span>
+        <span class="mastery-seg seg-L2"></span>
+        <span class="mastery-seg seg-L2"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+        <span class="mastery-seg mastery-seg--empty"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Latest full-length test ──────────────────────────── -->
+  <section class="test-card">
+    <div>
+      <div class="test-card-heading">Latest full-length test</div>
+      <div class="test-card-meta">Practice Test 2 &middot; Nov 18</div>
+    </div>
+    <div>
+      <div class="test-card-total">1260</div>
+      <div style="margin-top:10px;">
+        <span class="test-card-change pill-L3" style="border:1px solid var(--lv3-bd);">&#9650; 40 since last test</span>
+      </div>
+    </div>
+    <div class="test-sections">
+      <div class="test-section-tile">
+        <div class="test-section-label">Reading &amp; Writing</div>
+        <div class="test-section-score">620</div>
+      </div>
+      <div class="test-section-tile">
+        <div class="test-section-label">Math</div>
+        <div class="test-section-score">640</div>
+      </div>
+    </div>
+    <a class="test-card-link" href="#">See full report &#8594;</a>
+  </section>
+
+</main>
+</body>
+</html>
