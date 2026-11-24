@@ -105,7 +105,9 @@ describe("the message", () => {
     expect(text).toContain(
       "• Sign-ups who answered a question within 24 h: *7 of 12* (week before: 4 of 9)",
     );
-    expect(text).toContain("ALPHA and paid are not split here");
+    expect(text).toContain(
+      "Free-code and paid upgrades are not split here",
+    );
     expect(text).toContain(
       "under-13, deleted, internal and test accounts excluded",
     );

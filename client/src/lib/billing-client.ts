@@ -184,7 +184,10 @@ export async function startSubscriptionCheckout(
   }
 
   const outcome = parsed.data;
-  if (typeof window !== "undefined") {
+  // A linked code that could not be applied is not redirected straight away: the page tells the
+  // student first and its button continues to this same session (post-ALPHA brief, Karl
+  // 2026-11-11, item 3). Every other outcome goes to Stripe exactly as before.
+  if (typeof window !== "undefined" && outcome.promo !== "unavailable") {
     window.location.assign(outcome.url);
   }
 

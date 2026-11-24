@@ -11,7 +11,7 @@
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import UpgradePage from "./upgrade";
 import { practiceQuotaSchema } from "@lyceon/shared/practice-quota";
 
@@ -169,6 +169,91 @@ describe("Upgrade page: /upgrade?promo=<CODE>", () => {
       expect(startSubscriptionCheckoutMock).toHaveBeenCalledTimes(1),
     );
     expect(startSubscriptionCheckoutMock.mock.calls[0]).toEqual(["yearly"]);
+  });
+
+  /**
+   * Post-ALPHA brief (Karl, 2026-11-11) item 3: an exhausted, expired or invalid code shows a
+   * friendly message and continues to checkout without it. Never a dead end.
+   */
+  describe("a code that is no longer available", () => {
+    const assignMock = vi.fn();
+    const realLocation = window.location;
+    beforeEach(() => {
+      assignMock.mockReset();
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: {
+          // Only `assign` is replaced; the URL the page reads stays live (replaceState in openAt).
+          assign: assignMock,
+          get search() {
+            return realLocation.search;
+          },
+          get pathname() {
+            return realLocation.pathname;
+          },
+          get href() {
+            return realLocation.href;
+          },
+        },
+      });
+    });
+    afterEach(() => {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: realLocation,
+      });
+    });
+
+    it("says so, and its one button continues to the checkout session it already has", async () => {
+      startSubscriptionCheckoutMock.mockResolvedValue({
+        kind: "checkout_session",
+        url: "https://checkout.test/session-without-code",
+        sessionId: "cs_test_1",
+        promo: "unavailable",
+      });
+      await openAt("/upgrade?promo=ALPHA");
+      expect(screen.queryByTestId("upgrade-promo-unavailable")).toBeNull();
+      fireEvent.click(screen.getByTestId("upgrade-choose-monthly"));
+
+      const notice = await screen.findByTestId("upgrade-promo-unavailable");
+      expect(notice.textContent).toContain(
+        "This code isn't available any more.",
+      );
+      // The promise is withdrawn: the card no longer says the code will be applied.
+      expect(screen.queryByTestId("upgrade-promo-note")).toBeNull();
+      // The notice's button is the one emphasised action now: no plan card keeps the border.
+      for (const id of [
+        "upgrade-plan-monthly",
+        "upgrade-plan-quarterly",
+        "upgrade-plan-yearly",
+      ]) {
+        expect(screen.getByTestId(id).className).not.toContain("border-2");
+      }
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Continue to checkout" }),
+      );
+      expect(assignMock).toHaveBeenCalledWith(
+        "https://checkout.test/session-without-code",
+      );
+    });
+
+    it("an applied code shows no such message", async () => {
+      startSubscriptionCheckoutMock.mockResolvedValue({
+        kind: "checkout_session",
+        url: "https://checkout.test/session",
+        sessionId: "cs_test_1",
+        promo: "applied",
+      });
+      await openAt("/upgrade?promo=GRIND");
+      fireEvent.click(screen.getByTestId("upgrade-choose-monthly"));
+      await waitFor(() =>
+        expect(startSubscriptionCheckoutMock).toHaveBeenCalledWith("monthly", {
+          promo: "GRIND",
+        }),
+      );
+      expect(screen.queryByTestId("upgrade-promo-unavailable")).toBeNull();
+    });
   });
 
   it("a mangled code is ignored: no pre-selection, no note, the normal checkout", async () => {

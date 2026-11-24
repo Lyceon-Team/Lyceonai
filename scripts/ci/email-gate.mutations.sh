@@ -27,6 +27,9 @@ MIG2="supabase/migrations/20261127000000_email_gate_launch_pause.sql"
 # verdict) and G39-G43, G60 (the milestones) aim at MIG3; G39 and G41 were rewritten for the new
 # body (once per test date in email_milestone_try; the ±1-day window).
 MIG3="supabase/migrations/20261128000000_email_gate_milestone_window.sql"
+# Added 2026-11-21 (post-ALPHA brief item 4, SCL-281): 20261205000000 defines
+# email_gate_pause_profiles, the silent bulk pause; G76-G87 aim at MIG4.
+MIG4="supabase/migrations/20261205000000_email_gate_pause_profiles.sql"
 TEMPLATES="server/lib/notifications/templates/email-gate.ts"
 DISPATCH="server/lib/notifications/dispatch.ts"
 LIFECYCLE="server/lib/lifecycle-email.ts"
@@ -39,7 +42,7 @@ SCORE_JOB="server/services/exam-score-renewal/job.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/eg-mut.XXXX)"
 
-FILES=("$MIG" "$MIG2" "$MIG3" "$TEMPLATES" "$DISPATCH" "$LIFECYCLE" "$TRANSPORT" "$SEND_CTX" "$LINKS" "$WEBHOOK" "$SCORE_SVC" "$SCORE_JOB")
+FILES=("$MIG" "$MIG2" "$MIG3" "$MIG4" "$TEMPLATES" "$DISPATCH" "$LIFECYCLE" "$TRANSPORT" "$SEND_CTX" "$LINKS" "$WEBHOOK" "$SCORE_SVC" "$SCORE_JOB")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -432,6 +435,56 @@ run "G74 link by address" "MW6: a bounced or complained address" "$PG_SUITE"
 echo "=== G75 the webhook links nothing ==="
 plant "$WEBHOOK" $'    p_provider_event_id: providerEventId,\n    p_recipients: linkRecipients,' $'    p_provider_event_id: "none",\n    p_recipients: linkRecipients,' || { bad "G75 STALE"; exit 1; }
 run "G75 webhook links the recipient" "an open is recorded once" "$NOTIF"
+
+# ── The silent bulk pause (post-ALPHA brief, Karl 2026-11-11, item 4; SCL-281) ─────────────
+echo "=== G76 the default is a real run, not a dry run ==="
+need_last email_gate_pause_profiles G76 "$MIG4"
+plant "$MIG4" "  p_dry_run     boolean DEFAULT true," "  p_dry_run     boolean DEFAULT false," || { bad "G76 STALE"; exit 1; }
+run "G76 dry run by default" "BP1: the default is a dry run" "$PG_SUITE"
+
+echo "=== G77 a dry run writes ==="
+plant "$MIG4" $'    IF p_dry_run THEN\n      CONTINUE;\n    END IF;\n' "" || { bad "G77 STALE"; exit 1; }
+run "G77 dry run writes nothing" "BP1: the default is a dry run" "$PG_SUITE"
+
+echo "=== G78 the bulk pause sends the student pause note ==="
+plant "$MIG4" "    -- Never for an under-13; the worker only updates an existing Resend contact." $'    PERFORM public.emit_notification_event(public.notification_event_id(\'email_gate_paused_notice\', r.id::text || \':bp\'), \'email_gate_paused_notice\', r.id, jsonb_build_array(jsonb_build_object(\'profile_id\', r.id, \'channels\', jsonb_build_array(\'email\'))), \'{}\'::jsonb);' || { bad "G78 STALE"; exit 1; }
+run "G78 no pause note" "BP2: the real run pauses silently" "$PG_SUITE"
+
+echo "=== G79 the parent digest pause is not opened (the nightly pass emails the parent) ==="
+plant "$MIG4" $'        INSERT INTO public.email_gate_guardian_pauses (guardian_id, student_id, episode, paused_at)\n        VALUES (g.guardian_id, r.id, v_episode, p_now);' "        NULL;" || { bad "G79 STALE"; exit 1; }
+run "G79 no parent pause email" "BP2: the real run pauses silently" "$PG_SUITE"
+
+echo "=== G80 the reason is not recorded ==="
+plant "$MIG4" "    VALUES (r.id, v_row.state, 'paused', p_reason, 'bulk_pause', p_now);" "    VALUES (r.id, v_row.state, 'paused', 'bulk', 'bulk_pause', p_now);" || { bad "G80 STALE"; exit 1; }
+run "G80 transition carries the reason" "BP2: the real run pauses silently" "$PG_SUITE"
+
+echo "=== G81 an already-paused student is paused again ==="
+plant "$MIG4" "    IF v_found AND v_row.state = 'paused' THEN" "    IF false THEN" || { bad "G81 STALE"; exit 1; }
+run "G81 idempotent" "BP3: idempotent" "$PG_SUITE"
+
+echo "=== G82 the Resend mirror is not queued ==="
+plant "$MIG4" "    PERFORM public.email_gate_enqueue_mirror(r.id, 'paused', p_now);" "    NULL;" || { bad "G82 STALE"; exit 1; }
+run "G82 mirror queued" "BP4: the Resend mirror is queued" "$PG_SUITE"
+
+echo "=== G83 the mirror is queued for an under-13 ==="
+plant "$MIG4" "    PERFORM public.email_gate_enqueue_mirror(r.id, 'paused', p_now);" "    INSERT INTO public.email_gate_resend_outbox (profile_id, email_state, enqueued_at, attempts, next_attempt_at) VALUES (r.id, 'paused', p_now, 0, p_now) ON CONFLICT (profile_id) DO UPDATE SET email_state = 'paused';" || { bad "G83 STALE"; exit 1; }
+run "G83 never an under-13" "BP4: the Resend mirror is queued" "$PG_SUITE"
+
+echo "=== G84 the pause can never be woken ==="
+plant "$MIG4" $'           state_since = p_now,\n           pause_episode = pause_episode + 1,' $'           state_since = \'infinity\',\n           pause_episode = pause_episode + 1,' || { bad "G84 STALE"; exit 1; }
+run "G84 wake-up unchanged" "BP5: wake-up is unchanged" "$PG_SUITE"
+
+echo "=== G85 a guardian is paused directly ==="
+plant "$MIG4" "    IF r.role <> 'student' THEN" "    IF false THEN" || { bad "G85 STALE"; exit 1; }
+run "G85 students only" "BP1: the default is a dry run" "$PG_SUITE"
+
+echo "=== G86 anyone may call it ==="
+plant "$MIG4" $'REVOKE ALL ON FUNCTION public.email_gate_pause_profiles(uuid[], text, boolean, timestamptz)\n  FROM PUBLIC, anon, authenticated;\n' "" || { bad "G86 STALE"; exit 1; }
+run "G86 service role only" "A1: grants: service_role only" "$PG_SUITE"
+
+echo "=== G87 any reason is accepted ==="
+plant "$MIG4" "  IF p_reason IS NULL OR p_reason !~ '^[a-z][a-z0-9_]{2,63}\$' THEN" "  IF p_reason IS NULL THEN" || { bad "G87 STALE"; exit 1; }
+run "G87 reason format" "BP6: a bad reason" "$PG_SUITE"
 
 echo
 echo "EMAIL GATE MUTATIONS: $PASS passed, $FAIL failed"

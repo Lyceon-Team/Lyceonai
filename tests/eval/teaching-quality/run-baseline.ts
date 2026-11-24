@@ -51,7 +51,7 @@ import {
 } from "../../../scripts/rag/vertex";
 import { JUDGE_MODEL_DEFAULT, vertexJudge } from "./judge";
 import { replayOnce, type GenerateFn, type ReplayCase } from "./replay";
-import { rubricFor } from "./rubrics";
+import { rubricFor, rubricScopeConflict } from "./rubrics";
 
 type Options = {
   runs: number;
@@ -273,6 +273,17 @@ async function main(): Promise<void> {
       ) {
         throw new Error(
           `${row.case_id}: stored request has no help_level; re-import it with import-case.ts`,
+        );
+      }
+      // The same check the import makes, for a case imported before it existed (2026-11-22).
+      const caseRubric = rubricFor(row.case_id);
+      const scopeConflict =
+        caseRubric === null
+          ? null
+          : rubricScopeConflict(caseRubric, parsed.data.is_post_submit);
+      if (scopeConflict !== null) {
+        throw new Error(
+          `${scopeConflict}; re-scope the rubric or re-import the case`,
         );
       }
       const done = await client.query<{ run_index: number }>(

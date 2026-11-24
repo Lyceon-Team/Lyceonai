@@ -6,7 +6,7 @@
  *       (Karl, 2026-10-28) item 3 ("Monday growth report to #social at 14:00 UTC, from the
  *       database, with week and change from last week": sign-ups by signup_channel, active
  *       students, students returning week over week by test date, questions answered, reviews
- *       done, estimated study time, sign-ups answering within 24h, upgrades (ALPHA/paid)) and item 4
+ *       done, estimated study time, sign-ups answering within 24h, upgrades (free code/paid)) and item 4
  *       ("Karl checks the first Monday report"); .claude/skills/cmo/references/03-data-sources.md
  *       §4 (canonical metrics, internal accounts excluded); Doctrine 7 (no under-13 data);
  *       CLAUDE.md "Managed-service first" (a Vercel cron, as every other scheduled job here)]
@@ -179,7 +179,7 @@ export function formatGrowthReport(report: GrowthReport): string {
     studyTimeLine(w.study_minutes_estimate, p.study_minutes_estimate),
     `• Sign-ups who answered a question within 24 h: *${n(w.signups_answered_24h)} of ${n(w.signups)}* (week before: ${n(p.signups_answered_24h)} of ${n(p.signups)})`,
     line("Upgrades", w.upgrades, p.upgrades),
-    "    ALPHA and paid are not split here: only Stripe records the code.",
+    "    Free-code and paid upgrades are not split here: only Stripe records the code.",
     "_Students only; under-13, deleted, internal and test accounts excluded._",
   ];
   return escapeMrkdwn(lines.join("\n"));

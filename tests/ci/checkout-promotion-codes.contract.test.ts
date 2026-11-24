@@ -399,6 +399,32 @@ describe("a promo link pre-applies a usable code, and falls back to the code fie
     expect("allow_promotion_codes" in params).toBe(false);
     // Still no card when nothing is due.
     expect(params.payment_method_collection).toBe("if_required");
+    // The page is told the code went on (post-ALPHA brief, Karl 2026-11-11, item 3).
+    expect(res.body.promo).toBe("applied");
+  });
+
+  it("any active code applies by name, not only the founding one: GRIND (post-ALPHA brief item 3)", async () => {
+    stripeMocks.promotionCodesList.mockResolvedValue({
+      object: "list",
+      data: [
+        promotionCode({
+          id: "promo_grind",
+          max_redemptions: 5,
+          times_redeemed: 2,
+        }),
+      ],
+    });
+    const res = await checkoutWith({ plan: "monthly", promo: "GRIND" });
+    expect(res.status).toBe(200);
+    expect(stripeMocks.promotionCodesList).toHaveBeenCalledWith({
+      code: "GRIND",
+      active: true,
+      limit: 1,
+    });
+    expect(createdParams().discounts).toEqual([
+      { promotion_code: "promo_grind" },
+    ]);
+    expect(res.body.promo).toBe("applied");
   });
 
   it.each([
@@ -407,7 +433,7 @@ describe("a promo link pre-applies a usable code, and falls back to the code fie
     ["used up", [promotionCode({ max_redemptions: 50, times_redeemed: 50 })]],
     ["inactive", [promotionCode({ active: false })]],
   ])(
-    "an %s code falls back silently to the normal checkout with the code field",
+    "an %s code falls back to the normal checkout with the code field, and the page is told",
     async (_label, data) => {
       stripeMocks.promotionCodesList.mockResolvedValue({
         object: "list",
@@ -419,6 +445,8 @@ describe("a promo link pre-applies a usable code, and falls back to the code fie
       const params = createdParams();
       expect(params.allow_promotion_codes).toBe(true);
       expect("discounts" in params).toBe(false);
+      // Not a dead end, and not silent: the page shows "This code isn't available any more".
+      expect(res.body.promo).toBe("unavailable");
     },
   );
 
@@ -427,6 +455,7 @@ describe("a promo link pre-applies a usable code, and falls back to the code fie
     const res = await checkoutWith({ plan: "monthly", promo: "FOUNDING50" });
     expect(res.status).toBe(200);
     expect(createdParams().allow_promotion_codes).toBe(true);
+    expect(res.body.promo).toBe("unavailable");
   });
 
   it("a code Stripe refuses at creation is retried once with the code field, under its own key", async () => {
@@ -459,6 +488,8 @@ describe("a promo link pre-applies a usable code, and falls back to the code fie
     // Different requests, different keys: the retry is not read as "already in flight".
     expect(first?.[1].idempotencyKey).toMatch(/:promo_founding50$/);
     expect(second?.[1].idempotencyKey).not.toBe(first?.[1].idempotencyKey);
+    // The session that exists has no code on it, so the page must not say it was applied.
+    expect(res.body.promo).toBe("unavailable");
   });
 
   it("no promo means no lookup and the field exactly as before", async () => {
@@ -466,6 +497,7 @@ describe("a promo link pre-applies a usable code, and falls back to the code fie
     expect(res.status).toBe(200);
     expect(stripeMocks.promotionCodesList).not.toHaveBeenCalled();
     expect(createdParams().allow_promotion_codes).toBe(true);
+    expect("promo" in res.body).toBe(false);
   });
 
   it("a code that is not code-shaped is refused by the schema (the page never sends one)", async () => {
