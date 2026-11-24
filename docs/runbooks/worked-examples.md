@@ -65,8 +65,10 @@ The 16:15 UTC weekly job renders them the same day. Karl reviews them when he po
 
   A refused example is named in "Week <n> ready" with its reason; the others are still delivered.
 - **The write needs `20261118000000_worked_examples.sql` live in production.** Without the table,
-  every example is refused at step 3. Confirm it from the catalog (`information_schema.tables`),
-  not the migration ledger.
+  every example is refused at step 3. Confirmed live from the catalog by the CMO session, per
+  Karl's report of 2026-11-24: the table, the `worked_examples_leak_guard` trigger and the
+  service role's INSERT. The migration is not in `schema_migrations` (applied by hand), so check
+  the catalog (`information_schema.tables`), never the ledger.
 
 The pull-request route below still works: a batch Karl merges is approved by his merge.
 
