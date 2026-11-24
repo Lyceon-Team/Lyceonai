@@ -275,7 +275,10 @@ describe("the retrieved Stripe Customer is parsed, not asserted", () => {
       () => null,
       (e: unknown) => (e instanceof Error ? e.message : String(e)),
     );
-    expect(err, "expected a rejection; the call resolved instead").not.toBeNull();
+    expect(
+      err,
+      "expected a rejection; the call resolved instead",
+    ).not.toBeNull();
     expect(err).toContain('{"id":["Required"]}');
     expect(err).not.toContain("Tier-1");
     // The half that matters: the malformed Customer wrote no entitlement.
@@ -397,6 +400,9 @@ describe("the dispatcher is exhaustive over the HANDLED events", () => {
       "checkout.session.completed",
       "checkout.session.async_payment_succeeded",
       "checkout.session.async_payment_failed",
+      // SCL-289: the grace deadline's two writers.
+      "invoice.payment_failed",
+      "invoice.payment_succeeded",
     ];
 
     const handled = SUBSCRIBED_EVENTS.filter(
@@ -412,34 +418,39 @@ describe("the dispatcher is exhaustive over the HANDLED events", () => {
     console.table(
       handled.map((e) => ({
         event: e,
-        routedBy: BRANCHED.includes(e) ? "explicit branch" : "subscription path",
+        routedBy: BRANCHED.includes(e)
+          ? "explicit branch"
+          : "subscription path",
       })),
     );
 
     expect(unrouted).toEqual([]);
     // Not vacuous: assert the branch lists actually cover the handled set.
-    expect(handled.length).toBe(BRANCHED.length + SUBSCRIPTION_LIFECYCLE.length);
+    expect(handled.length).toBe(
+      BRANCHED.length + SUBSCRIPTION_LIFECYCLE.length,
+    );
   });
 
   it("an event that reaches the subscription path but is not one is REFUSED", async () => {
-    // Drives the real handler with an invoice payload on an event type the
-    // dispatcher has no branch for. Before the guard this parsed clean — every
+    // Drives the real handler with a promotion-code payload on an event type the
+    // dispatcher has no branch for. (It used `invoice.payment_succeeded` until
+    // SCL-289 made that event HANDLED; `promotion_code.updated` is still ignored.) Before the guard this parsed clean — every
     // Stripe object has an `id` — and asked Stripe for a SUBSCRIPTION named
-    // `in_surface_1`.
+    // `promo_surface_1`.
     //
     // `charge.refunded` is used because it is NOT on the subscribed surface
     // today, so this test cannot be broken by a future disposition change; the
     // subscribed path is forced by driving `dispatch` directly below.
     const { body, signature } = signedDelivery(
-      "invoice.payment_succeeded",
-      { id: "in_surface_1", object: "invoice" },
+      "promotion_code.updated",
+      { id: "promo_surface_1", object: "promotion_code" },
       "evt_surface_ignored_invoice",
     );
     const outcome = await processStripeWebhook(body, signature);
 
-    // Today `invoice.payment_succeeded` is IGNORED, so it never reaches
+    // Today `promotion_code.updated` is IGNORED, so it never reaches
     // dispatch at all. Both halves: ignored, and nothing written, and Stripe
-    // was never asked to retrieve a subscription by an invoice id.
+    // was never asked to retrieve a subscription by a promotion code id.
     expect(outcome).toMatchObject({ ok: true, status: "ignored" });
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
     expect(stripeApi.subscriptionsRetrieve).not.toHaveBeenCalled();
@@ -450,8 +461,8 @@ describe("the dispatcher is exhaustive over the HANDLED events", () => {
     // editing production data: make the event HANDLED for the duration of this
     // test, exactly as promoting an ignored event would.
     const surface = await import("../../server/lib/stripe/event-surface");
-    const original = surface.EVENT_DISPOSITION["invoice.payment_succeeded"];
-    Object.defineProperty(surface.EVENT_DISPOSITION, "invoice.payment_succeeded", {
+    const original = surface.EVENT_DISPOSITION["promotion_code.updated"];
+    Object.defineProperty(surface.EVENT_DISPOSITION, "promotion_code.updated", {
       value: { kind: "handled" },
       configurable: true,
       writable: true,
@@ -459,8 +470,8 @@ describe("the dispatcher is exhaustive over the HANDLED events", () => {
 
     try {
       const { body, signature } = signedDelivery(
-        "invoice.payment_succeeded",
-        { id: "in_surface_1", object: "invoice" },
+        "promotion_code.updated",
+        { id: "promo_surface_1", object: "promotion_code" },
         "evt_surface_promoted_invoice",
       );
 
@@ -476,21 +487,21 @@ describe("the dispatcher is exhaustive over the HANDLED events", () => {
        * half that shows the HARM rather than the symptom.
        *
        * Without the guard this reads:
-       *   "Stripe invoice.payment_succeeded payload failed shape validation:
+       *   "Stripe promotion_code.updated payload failed shape validation:
        *    no valid student_profile_id in metadata or client_reference_id"
-       * — which names a missing field on an invoice, and sends an operator
+       * — which names a missing field on a promotion code, and sends an operator
        * looking for metadata that was never supposed to be there.
        */
       expect(err).toContain("has no branch in dispatch()");
 
       // The half that is the whole point: Stripe was NEVER asked to retrieve a
-      // Subscription by `in_surface_1`, and no entitlement moved.
+      // Subscription by `promo_surface_1`, and no entitlement moved.
       expect(stripeApi.subscriptionsRetrieve).not.toHaveBeenCalled();
       expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
     } finally {
       Object.defineProperty(
         surface.EVENT_DISPOSITION,
-        "invoice.payment_succeeded",
+        "promotion_code.updated",
         { value: original, configurable: true, writable: true },
       );
     }

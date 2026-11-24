@@ -115,18 +115,13 @@ export const EVENT_DISPOSITION: Record<SubscribedEvent, EventDisposition> = {
     "SCL-072: as promotion_code.created — observability only, no entitlement " +
       "effect.",
   ),
-  "invoice.payment_succeeded": ignored(
-    "§4.5 single-writer: subscription state is written from " +
-      "`customer.subscription.updated` and from nothing else. This event " +
-      "describes the same state transition from the invoice side; deriving it " +
-      "here as well would give one state two writers, which is the " +
-      "parallel-paths-built-differently pattern.",
-  ),
-  "invoice.payment_failed": ignored(
-    "§4.5 single-writer: `past_due` is Stripe's subscription status and is " +
-      "written from `customer.subscription.updated`. Deriving it independently " +
-      "from the invoice would be a second writer for one state.",
-  ),
+  // SCL-289 (owner brief "Founding lapse flow", Karl 2026-11-24): both invoice events are now
+  // handled, and §4.5's single writer still holds. Neither writes subscription STATUS: that is
+  // still written from `customer.subscription.updated` and from nothing else. They write only
+  // the grace deadline (`entitlements.grace_period_ends_at`), which no other event carries:
+  // `payment_failed` sets it once and emails the attempt; `payment_succeeded` clears it.
+  "invoice.payment_succeeded": HANDLED,
+  "invoice.payment_failed": HANDLED,
   "refund.created": ignored(
     "SCL-048 as amended by SCL-072: a refund revokes when it reaches status " +
       "`succeeded`, and creation is not that transition. Subscribed so the " +

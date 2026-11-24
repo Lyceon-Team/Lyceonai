@@ -41,6 +41,10 @@
       "schedule": "0 20 * * *"
     },
     {
+      "path": "/api/internal/billing-lapse",
+      "schedule": "30 20 * * *"
+    },
+    {
       "path": "/api/internal/content-publish",
       "schedule": "5 12 * * *"
     },

@@ -8001,7 +8001,10 @@ CREATE FUNCTION public.entitlement_active(p_profile_id uuid) RETURNS boolean
     AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.entitlements e
-    WHERE e.profile_id = p_profile_id AND e.status IN ('active','past_due','trialing')
+     WHERE e.profile_id = p_profile_id
+       AND (e.status IN ('active', 'trialing')
+            OR (e.status = 'past_due'
+                AND (e.grace_period_ends_at IS NULL OR e.grace_period_ends_at > now())))
   );
 $$;
 
@@ -18818,6 +18821,27 @@ CREATE TABLE public.auth_runtime_config_history (
 
 
 --
+-- Name: billing_lapse_notices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.billing_lapse_notices (
+    stripe_subscription_id text NOT NULL,
+    notice text NOT NULL,
+    ref text NOT NULL,
+    claimed_at timestamp with time zone DEFAULT now() NOT NULL,
+    sent_at timestamp with time zone,
+    CONSTRAINT billing_lapse_notices_notice_check CHECK ((notice = ANY (ARRAY['card_needed_14'::text, 'card_needed_7'::text, 'card_needed_2'::text, 'payment_failed_1'::text, 'payment_failed_2'::text, 'payment_failed_3'::text, 'access_ended'::text])))
+);
+
+
+--
+-- Name: TABLE billing_lapse_notices; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.billing_lapse_notices IS 'Billing lapse emails (SCL-289): one row per subscription, notice and reference (the invoice date for card_needed_*, the invoice id for payment_failed_*, the subscription for access_ended). Inserted to claim a send, deleted if the send fails, sent_at set once it went. No address, no name, no amount.';
+
+
+--
 -- Name: caching_runtime_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -23335,6 +23359,14 @@ ALTER TABLE ONLY public.auth_runtime_config_history
 
 ALTER TABLE ONLY public.auth_runtime_config
     ADD CONSTRAINT auth_runtime_config_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: billing_lapse_notices billing_lapse_notices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_lapse_notices
+    ADD CONSTRAINT billing_lapse_notices_pkey PRIMARY KEY (stripe_subscription_id, notice, ref);
 
 
 --
@@ -28182,6 +28214,12 @@ ALTER TABLE public.auth_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auth_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: billing_lapse_notices; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.billing_lapse_notices ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: caching_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -32819,6 +32857,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.auth_runtime_config TO service
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.auth_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE billing_lapse_notices; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.billing_lapse_notices TO service_role;
 
 
 --

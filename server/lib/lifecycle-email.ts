@@ -306,6 +306,58 @@ export async function sendEntitledEvents(
 }
 
 /**
+ * @spec [owner brief "Founding lapse flow" (Karl, 2026-11-24) rulings 5-7; Doc 01 §23; SCL-289]
+ *       | @implemented [2026-11-24]
+ *
+ * plain English: one billing lapse event (`lyceon.billing_*`) to the PAYER, through the same
+ * contact upsert and the same eligibility as the welcome: never an under-13 student (ruling 7;
+ * Resend holds no contact for one), a deleted or deletion-pending account, or a denylisted
+ * address. Billing emails are always sent: this path does not ask the email send gate. The
+ * outcome says why a send was skipped, so the job can count the under-13 skips.
+ */
+export type BillingEventOutcome =
+  | { kind: "sent" }
+  | { kind: "skipped"; reason: SkipReason | "deletion_state_unreadable" }
+  | { kind: "failed" };
+
+export async function sendBillingEvent(
+  payerProfileId: string,
+  event: string,
+  payload: Record<string, string>,
+  deps: LifecycleDeps,
+): Promise<BillingEventOutcome> {
+  const result = await eligibility(payerProfileId, deps, event);
+  if ("skip" in result) return { kind: "skipped", reason: result.skip };
+  const context = { recipientProfileId: payerProfileId };
+  const firstName = lifecycleFirstName(
+    result.profile.display_name,
+    result.profile.email,
+  );
+  const contact = await deps.contacts.upsertContact(
+    result.profile.email,
+    {
+      ...(firstName !== undefined ? { firstName } : {}),
+      properties: { role: result.role },
+    },
+    context,
+  );
+  if (!contact.ok) return { kind: "failed" };
+  const sent = await deps.contacts.sendEvent(
+    event,
+    result.profile.email,
+    payload,
+    context,
+  );
+  if (!sent.ok) return { kind: "failed" };
+  logger.info("LIFECYCLE_EMAIL", "sent", "Billing event sent", {
+    profileId: payerProfileId,
+    event,
+    role: result.role,
+  });
+  return { kind: "sent" };
+}
+
+/**
  * @spec [owner brief "Lifecycle emails: reminder timing fix + behaviour triggers" (Karl,
  *       2026-10-21) PR 1 and PR 2; contracts/notifications.contract.md C14A.4–C14A.5; SCL-239,
  *       SCL-240] | @implemented [2026-10-21]
