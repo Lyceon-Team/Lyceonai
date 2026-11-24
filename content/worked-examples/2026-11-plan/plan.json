@@ -82,6 +82,11 @@
       "hook_type": "challenge"
     },
     {
+      "post_on": "2026-11-29",
+      "skill_code": "Linear Equations in One Variable",
+      "hook_type": "obvious_answer_trap"
+    },
+    {
       "post_on": "2026-11-30",
       "skill_code": "Probability and Conditional Probability",
       "hook_type": "contrarian"

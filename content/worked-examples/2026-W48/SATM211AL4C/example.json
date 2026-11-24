@@ -1,0 +1,46 @@
+{
+  "question_id": "SATM211AL4C",
+  "skill_code": "Percentages",
+  "post_on": "2026-11-25",
+  "hook": {
+    "type": "speed",
+    "line": "Store A: up 60%, then 25% off. Store B: up 20%. Which costs more?",
+    "voice": "Think you can do this one without touching the hundred and forty? There's a shortcut."
+  },
+  "question_voice": "Two stores, the same item, different markups and a sale, and we want the gap in price.",
+  "signature_move": "Turn each percent change into a multiplier.",
+  "steps": [
+    {
+      "notepad": "A: × 1.6, then × 0.75",
+      "voice": "Turn each change into a multiplier. Up sixty percent is times one point six. Twenty-five off is times point seven five."
+    },
+    {
+      "notepad": "1.6 × 0.75 = 1.2",
+      "voice": "Multiply them. One point six times point seven five is one point two."
+    },
+    {
+      "notepad": "B: × 1.2",
+      "voice": "Store B goes up twenty percent. That's times one point two as well."
+    },
+    {
+      "notepad": "same multiplier → same price",
+      "voice": "Same multiplier on the same cost, so the prices match. We never needed the hundred and forty."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "Answer: A) 0",
+    "voice": "The difference is zero. That's A. Quick check: one forty times one point two is one sixty-eight at both stores."
+  },
+  "trap": {
+    "summary": "Subtracting the percents (60 − 25 = 35, more than 20) and concluding Store A charges more, so choosing a nonzero difference.",
+    "notepad": [
+      "60 − 25 = 35 → A costs more? ✗",
+      "25% comes off the bigger price",
+      "1.6 × 0.75 = 1.2 ✓"
+    ],
+    "voice": "The trap is subtracting. Sixty minus twenty-five looks like thirty-five, which beats twenty. But the discount comes off the marked-up price, not the original."
+  },
+  "check": "140 × 1.2 = 168 at both stores, so the difference is 0.",
+  "takeaway": "Multiply percent changes; never add or subtract them."
+}
