@@ -12,6 +12,11 @@
  * the content file; video_script is every spoken line in order. The table's own trigger refuses an
  * approved row whose question is in a full-length form or a QOTD today or later, so applying it
  * is where the database's half of the leak rule bites. Nothing here touches a database.
+ *
+ * From 2026-11-24 (SCL-288) the weekly job writes the approved rows itself (weekly-admit.ts) from
+ * the same values (seedRowValues), so this script and the job cannot disagree about a row. An
+ * example approved by the scheduled task's trailer is recorded as approved_by
+ * "worked-examples-task" at the commit's date; Karl's merge is still "Karl" at the merge's date.
  */
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,10 +24,10 @@ import {
   workedExampleId,
   type WorkedExampleContent,
 } from "../../packages/shared/src/worked-example-schema";
-import { approvalFromRecord, type ExampleApproval } from "./approval";
+import { approvalForCommit, type ExampleApproval } from "./approval";
 import { scriptLines } from "./composition";
 import { loadExamples } from "./content";
-import { folderCommit, pullForCommit } from "./github";
+import { folderCommit, folderCommitRecord, pullForCommit } from "./github";
 import { loadKit } from "./kit";
 
 /** A dollar-quoted SQL literal whose tag cannot occur in the text. */
@@ -32,35 +37,92 @@ export function sqlLiteral(text: string): string {
   return `$${tag}$${text}$${tag}$`;
 }
 
+/** One public.worked_examples row, as the content file and its approval give it. */
+export type WorkedExampleRow = {
+  id: string;
+  question_id: string;
+  skill_code: string;
+  signature_move: string;
+  steps: WorkedExampleContent["steps"];
+  trap: string;
+  check_step: string;
+  takeaway: string;
+  video_script: string;
+  hook_type: WorkedExampleContent["hook"]["type"];
+  hook_line: string;
+  post_on: string;
+  status: "draft" | "approved" | "retired";
+  approved_by: string | null;
+  approved_at: string | null;
+};
+
+/** Who approved, as the row records it: "Karl" for his merge, the task's name for its trailer. */
+export function approvedBy(approval: ExampleApproval): {
+  by: string;
+  at: string;
+} {
+  return "pr" in approval
+    ? { by: "Karl", at: approval.mergedAt }
+    : { by: approval.by, at: approval.at };
+}
+
+export function seedRowValues(
+  example: WorkedExampleContent,
+  approval: ExampleApproval | null,
+  outroText: string,
+): WorkedExampleRow {
+  const status = example.retired ? "retired" : approval ? "approved" : "draft";
+  const who = status === "approved" && approval ? approvedBy(approval) : null;
+  return {
+    id: workedExampleId(example.question_id),
+    question_id: example.question_id,
+    skill_code: example.skill_code,
+    signature_move: example.signature_move,
+    steps: example.steps,
+    trap: example.trap.summary,
+    check_step: example.check,
+    takeaway: example.takeaway,
+    video_script: scriptLines(example, outroText)
+      .map((l) => l.text)
+      .join("\n"),
+    hook_type: example.hook.type,
+    hook_line: example.hook.line,
+    post_on: example.post_on,
+    status,
+    approved_by: who?.by ?? null,
+    approved_at: who?.at ?? null,
+  };
+}
+
 export function seedRow(
   example: WorkedExampleContent,
   approval: ExampleApproval | null,
   outroText: string,
 ): string {
-  const status = example.retired ? "retired" : approval ? "approved" : "draft";
-  const script = scriptLines(example, outroText)
-    .map((l) => l.text)
-    .join("\n");
+  const r = seedRowValues(example, approval, outroText);
   const cols: [string, string][] = [
-    ["id", sqlLiteral(workedExampleId(example.question_id))],
-    ["question_id", sqlLiteral(example.question_id)],
-    ["skill_code", sqlLiteral(example.skill_code)],
-    ["signature_move", sqlLiteral(example.signature_move)],
-    ["steps", `${sqlLiteral(JSON.stringify(example.steps))}::jsonb`],
-    ["trap", sqlLiteral(example.trap.summary)],
-    ["check_step", sqlLiteral(example.check)],
-    ["takeaway", sqlLiteral(example.takeaway)],
-    ["video_script", sqlLiteral(script)],
-    ["hook_type", sqlLiteral(example.hook.type)],
-    ["hook_line", sqlLiteral(example.hook.line)],
-    ["post_on", `${sqlLiteral(example.post_on)}::date`],
-    ["status", sqlLiteral(status)],
-    ["approved_by", status === "approved" ? sqlLiteral("Karl") : "NULL"],
+    ["id", sqlLiteral(r.id)],
+    ["question_id", sqlLiteral(r.question_id)],
+    ["skill_code", sqlLiteral(r.skill_code)],
+    ["signature_move", sqlLiteral(r.signature_move)],
+    ["steps", `${sqlLiteral(JSON.stringify(r.steps))}::jsonb`],
+    ["trap", sqlLiteral(r.trap)],
+    ["check_step", sqlLiteral(r.check_step)],
+    ["takeaway", sqlLiteral(r.takeaway)],
+    ["video_script", sqlLiteral(r.video_script)],
+    ["hook_type", sqlLiteral(r.hook_type)],
+    ["hook_line", sqlLiteral(r.hook_line)],
+    ["post_on", `${sqlLiteral(r.post_on)}::date`],
+    ["status", sqlLiteral(r.status)],
+    [
+      "approved_by",
+      r.approved_by === null ? "NULL" : sqlLiteral(r.approved_by),
+    ],
     [
       "approved_at",
-      status === "approved" && approval
-        ? `${sqlLiteral(approval.mergedAt)}::timestamptz`
-        : "NULL",
+      r.approved_at === null
+        ? "NULL"
+        : `${sqlLiteral(r.approved_at)}::timestamptz`,
     ],
   ];
   const names = cols.map(([n]) => n);
@@ -94,9 +156,9 @@ async function main(): Promise<void> {
   const rows: string[] = [];
   for (const e of loadExamples(content).filter((x) => x.cycle === week)) {
     const sha = folderCommit(content, e.dir);
-    const verdict = approvalFromRecord(
-      await pullForCommit(repo, sha, token),
-      sha,
+    const verdict = await approvalForCommit(
+      folderCommitRecord(content, sha),
+      (s) => pullForCommit(repo, s, token),
       process.env.CONTENT_APPROVER_LOGIN?.trim() || undefined,
     );
     if (!verdict.ok)
