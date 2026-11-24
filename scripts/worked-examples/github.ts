@@ -82,15 +82,20 @@ export function folderCommitRecord(
       contentRoot,
       "log",
       "-1",
-      "--format=%cI%x00%(trailers:key=Authored-By,valueonly,separator=%x1f)",
+      "--format=%ct%x00%(trailers:key=Authored-By,valueonly,separator=%x1f)",
       sha,
     ],
     { encoding: "utf8" },
   ).replace(/\n$/, "");
-  const [committedAt = "", trailers = ""] = out.split("\0");
+  const [committedEpoch = "", trailers = ""] = out.split("\0");
+  // %ct (seconds since the epoch) rendered as UTC ISO: %cI's offset form differs between git
+  // versions ("+00:00" against "Z"), and the approval's date must not depend on the runner.
+  const seconds = Number(committedEpoch.trim());
+  if (!Number.isInteger(seconds) || seconds <= 0)
+    throw new Error(`no commit date for ${sha}`);
   return {
     sha,
-    committedAt: committedAt.trim(),
+    committedAt: new Date(seconds * 1000).toISOString(),
     authoredBy: trailers
       .split("\x1f")
       .map((t) => t.trim())

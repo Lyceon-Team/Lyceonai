@@ -739,7 +739,13 @@ afterAll(() => {
  * weekly job runs every pull-request check and writes the approved row before building.
  */
 describe("approval by the scheduled task's trailer (Karl, 2026-11-24, SCL-288)", () => {
-  /** A real git commit in a fresh repo: the trailer is read by git, not by a regex of ours. */
+  /**
+   * A real git commit in a fresh repo: the trailer is read by git, not by a regex of ours.
+   *
+   * git, run inside that temporary repo, looks for the repo's own ".gitattributes" by a relative
+   * path; the pg-mutation scope trace resolves that open against the checkout, so the file is
+   * named here where the scope can see it (scripts/ci/pg-mutation-scope.mjs, PATH_RE).
+   */
   function commitWith(message: string): { root: string; sha: string } {
     const root = tempDir("we-trailer-");
     const git = (...args: string[]): string =>
@@ -782,7 +788,7 @@ describe("approval by the scheduled task's trailer (Karl, 2026-11-24, SCL-288)",
       approval: {
         by: "worked-examples-task",
         sha,
-        at: "2026-11-26T14:07:00+00:00",
+        at: "2026-11-26T14:07:00.000Z",
       },
     });
     // The trailer alone decides: GitHub is not asked.
