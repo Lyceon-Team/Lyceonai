@@ -197,7 +197,7 @@ echo "=== (13b) a QOTD answer is reported as a practice answer ==="
 plant "$FUNNEL" '  if (mode === "qotd") return "qotd";' '' || { bad "M13b STALE"; exit 1; }
 run "M13b QOTD source" "F9: QOTD counts for first_answer only" "$PG_SUITE"
 
-echo "=== (14) any discount counts as the founding code ==="
+echo "=== (14) any discount counts as a 100%-off code ==="
 plant "$FUNNEL" '  if (discounts.data.some((d) => d.source.coupon.percent_off === 100))' \
   '  if (discounts.data.some((d) => d.source.coupon.percent_off !== null))' || { bad "M14 STALE"; exit 1; }
 run "M14 alpha is 100% off only" "F10: upgraded via" "$PG_SUITE"

@@ -110,7 +110,8 @@ Fixes agreed or proposed: UTM-tag the DM link (e.g. `lyceon.ai/login?utm_source=
 Verify live in Stripe before quoting; these are observations, not standing facts.
 - **Observed 2026-10-15:** the live subscription is $59.99/month. Older $0.99/year subscriptions in Stripe are early test-price subscriptions, mostly Karl's own accounts. Treat them as internal.
 - **Pricing restructuring** is an open area for Karl. You may propose price or free-tier changes with evidence and reasoning (Karl, 2026-10-15); Karl decides.
-- **Founding cohort (from 2026-10-10):** target 30–50 students prepping for the Nov 7 / Dec 5 SAT. Code **ALPHA** gives 100% off, free for two months, no card at checkout; access lapses afterward unless they pay. Redeeming means joining the cohort and accepting study-reminder emails. A reminder email goes to non-redeemers.
+- **Founding cohort (from 2026-10-10):** target 30–50 students prepping for the Nov 7 / Dec 5 SAT. The cohort code gave 100% off, free for two months, no card at checkout; access lapses afterward unless they pay. **Closed 2026-11-11** (50-redemption cap reached; the code expires 2026-11-15) and the reminder to non-redeemers is off (Karl, 2026-11-11).
+- **Codes since then** are handed out one-to-one by Karl, a few seats each. Never name a code, or say one exists, in public copy, social, email or ads; write generically ("start free", "upgrade to Pro"). `/upgrade?promo=<CODE>` applies any active code; one that is used up, expired or unknown shows "This code isn't available any more" and continues to checkout.
 - **The moment of truth:** when founding discounts lapse, roughly two months after each redemption (the first redemptions were 2026-10-10). That's the first real revenue test. Track the exact dates from Stripe in the private store.
 
 ## 9. The SAT calendar

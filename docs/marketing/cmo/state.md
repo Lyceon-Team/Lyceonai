@@ -16,7 +16,8 @@ Internal account IDs and all metrics are kept outside the repo while it is publi
 ## Key dates
 
 - SAT: Nov 7, 2026 and Dec 5, 2026 (verify in `shared/sat-test-dates.ts`).
-- Founding code ALPHA: two months free from redemption; first redemptions 2026-10-10, so the first lapses fall around 2026-12-10. Verify the coupon duration in Stripe and list exact lapse weeks here.
+- Founding code: two months free from redemption; first redemptions 2026-10-10, so the first lapses fall around 2026-12-10. Verify the coupon duration in Stripe and list exact lapse weeks here.
+- The founding code closed 2026-11-11 (50-redemption cap; expires 2026-11-15). A 5-seat code handed out one-to-one runs to 2026-11-29 (two months free). Neither is named in public copy.
 
 ## Channels
 

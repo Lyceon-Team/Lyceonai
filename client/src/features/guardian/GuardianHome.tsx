@@ -60,8 +60,8 @@ export function GuardianNoStudents({
       <h1 className="text-2xl font-semibold">Add your first student</h1>
       <p className="mx-auto max-w-xl text-base text-muted-foreground">
         Invite your teen to join, or enter the 6-character link code from their
-        Profile page, under Settings. Once linked, you&rsquo;ll see their
-        progress, study calendar and test results here.
+        Settings, under Guardian. Once linked, you&rsquo;ll see their progress,
+        study calendar and test results here.
       </p>
       <GuardianInviteCard />
       <Button
