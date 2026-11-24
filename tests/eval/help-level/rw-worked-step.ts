@@ -15,7 +15,9 @@
  * submission":
  *  - `optionMentions` (deterministic): a choice named by letter or quoted by its own words
  *    decides; a lone word only one choice uses is reported as advisory;
- *  - the judge, with G0-2-08's rubric (rubrics.ts), whose must-not item is the rule.
+ *  - the judge, with G0-2-09's rubric (rubrics.ts), whose must-not item is the rule. G0-2-09 is
+ *    the before-submission case this replay backs until a real one exists (2026-11-22: the real
+ *    G0-2-08 turn turned out to be post-submit).
  * A version passes when no worked-step reply in any run names an option on either check.
  * Karl's ruling (2026-11-22) adds the deflection count: a worked step that is only v2's review
  * line ("Submit it and we'll go through it together.") gave no step. v7 passes when 0 of its
@@ -154,8 +156,8 @@ async function main(): Promise<void> {
   if (!Number.isInteger(runs) || runs < 1)
     throw new Error("--runs must be a positive integer");
   assertProxied();
-  const rubric = rubricFor("G0-2-08");
-  if (rubric === null) throw new Error("G0-2-08 has no rubric");
+  const rubric = rubricFor("G0-2-09");
+  if (rubric === null) throw new Error("G0-2-09 has no rubric");
   const ruleIndex = (rubric.must_not ?? []).indexOf(
     NO_OPTION_NAMED_BEFORE_SUBMISSION,
   );
@@ -213,7 +215,7 @@ async function main(): Promise<void> {
         try {
           record = await replayOnce({
             evalCase: {
-              caseId: "G0-2-08-SYNTH",
+              caseId: "G0-2-09-SYNTH",
               setVersion: "rw worked-step replay v1",
               request: rwTurnRequest(version, history, state),
               scanCorrectAnswer: RW_ITEM.correct,

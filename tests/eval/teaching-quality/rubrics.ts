@@ -107,22 +107,45 @@ const NOVEMBER_CASES: readonly TutorEvalRubric[] = [
 
 /**
  * @spec [owner brief "Reading & Writing worked step", Karl 2026-11-22: "Add it as an eval case
- *       with the rubric rule 'no option named before submission'"] | @implemented [2026-11-22]
- * plain English: the production turn on SATRW23GOZ2P (key A) where LISA's worked step said
- * "Let's look at Option B", before the student had answered. On a Reading & Writing item the
- * worked step works from the passage and the question; naming, ranking or ruling out a choice is
- * the answer itself. The case row (the conversation up to that turn) lives in
- * `tutor_eval_cases`, imported by Karl (owner-run). The deterministic half of the rule is
- * `optionMentions` (option-mentions.ts).
+ *       with the rubric rule 'no option named before submission'"; owner brief 2026-11-22 (the
+ *       re-scope): "The real G0-2-08 case is post-submit … Re-scope G0-2-08 as a post-submit
+ *       control … Move the before-submission rule to a new case, G0-2-09, backed by the synthetic
+ *       SATRW23GOZ2P replay"] | @implemented [2026-11-22]
+ * plain English: two cases on SATRW23GOZ2P (key A).
+ *  - G0-2-08, the production turn where LISA said "Let's look at Option B". Its item was answered
+ *    (review_session_items answered at 23:10:08; the conversation started 23:11:05), so it is a
+ *    POST-submit control: naming and comparing the options is allowed. The rule is that LISA
+ *    explains why the key is right from the passage and never calls a wrong option right. Karl's
+ *    batches ff9abf54 (v6) and b1d92b1a (v7) failed 5/5 only because the before-submission rule
+ *    was applied to this submitted item. The judge never sees the key, so the note names it; that
+ *    is safe only because the case is post-submit (`submit_state`, checked at import).
+ *  - G0-2-09, the before-submission rule ("no option named before submission"), backed by the
+ *    synthetic replay tests/eval/help-level/rw-worked-step.ts until a real before-submission case
+ *    exists. The deterministic half of its rule is `optionMentions` (option-mentions.ts).
  */
 export const NO_OPTION_NAMED_BEFORE_SUBMISSION =
   "No option named before submission: names, quotes, describes, ranks, compares or rules out any answer choice (by letter or by its words), including a wrong one, while the student has not yet answered.";
 const WORKS_FROM_PASSAGE =
   "Does the worked step from the passage and the question only: what the question asks, what the passage says, and what an answer would have to do to fit.";
+export const EXPLAINS_KEY_FROM_PASSAGE =
+  "Explains why the key is right from the passage: ties the keyed choice to what the passage says.";
+export const ENDORSES_WRONG_OPTION =
+  "Endorses a wrong option as right: says or implies that a choice other than the key is correct or acceptable.";
 
 const RW_CASES: readonly TutorEvalRubric[] = [
   {
     case_id: "G0-2-08",
+    submit_state: "post_submit",
+    tool_request: false,
+    gold_response: null,
+    judge_note:
+      "Reading & Writing, AFTER submission: the student has answered. The key is A. Naming and comparing the options is allowed here. LISA should explain why A is right from the passage, and must never call a wrong option right. Score the move, not the wording.",
+    must: [EXPLAINS_KEY_FROM_PASSAGE],
+    must_not: [ENDORSES_WRONG_OPTION, NO_RESTART],
+  },
+  {
+    case_id: "G0-2-09",
+    submit_state: "pre_submit",
     tool_request: false,
     gold_response: null,
     judge_note:
@@ -146,4 +169,37 @@ export const TEACHING_QUALITY_RUBRICS: readonly TutorEvalRubric[] = [
 
 export function rubricFor(caseId: string): TutorEvalRubric | null {
   return TEACHING_QUALITY_RUBRICS.find((r) => r.case_id === caseId) ?? null;
+}
+
+/**
+ * @spec [owner brief 2026-11-22: "a rule scoped 'before submission' on a case whose import says
+ *       post-submit fails at import time, not at judge time"] | @implemented [2026-11-22]
+ * Pure. Why a case's rubric cannot score its cut-off, or null when it can: the rubric is scoped to
+ * the other submit state. A rubric that names "before submission" in any item or note must be
+ * scoped `pre_submit`, and one that names "after submission" `post_submit`, so the wording and the
+ * scope cannot disagree (checked here too, not only in a test).
+ */
+export function rubricScopeConflict(
+  rubric: TutorEvalRubric,
+  isPostSubmit: boolean,
+): string | null {
+  const text = [
+    rubric.judge_note ?? "",
+    ...(rubric.must ?? []),
+    ...(rubric.must_not ?? []),
+  ].join("\n");
+  const scope =
+    rubric.submit_state ??
+    (/before submission/i.test(text)
+      ? "pre_submit"
+      : /after submission/i.test(text)
+        ? "post_submit"
+        : null);
+  if (scope === null) return null;
+  const actual = isPostSubmit ? "post_submit" : "pre_submit";
+  if (scope === actual) return null;
+  return (
+    `${rubric.case_id}: the rubric is scoped ${scope === "pre_submit" ? "before" : "after"} submission, ` +
+    `but this cut-off is ${actual === "pre_submit" ? "before" : "after"} it`
+  );
 }

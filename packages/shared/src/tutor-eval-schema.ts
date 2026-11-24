@@ -70,6 +70,14 @@ export const tutorEvalRubricSchema = z.object({
   judge_note: z.string().min(1).nullable(),
   must: z.array(z.string().min(1)).nullable(),
   must_not: z.array(z.string().min(1)).nullable(),
+  /**
+   * @spec [owner brief 2026-11-22: "a rule scoped 'before submission' on a case whose import says
+   *       post-submit fails at import time, not at judge time"] | @implemented [2026-11-22]
+   * The submit state the rubric's rules are written for: `pre_submit` (the student has not
+   * answered), `post_submit` (they have), or absent (either). The import refuses a case whose
+   * cut-off is in the other state (tests/eval/teaching-quality/rubrics.ts `rubricScopeConflict`).
+   */
+  submit_state: z.enum(["pre_submit", "post_submit"]).optional(),
 });
 export type TutorEvalRubric = z.infer<typeof tutorEvalRubricSchema>;
 

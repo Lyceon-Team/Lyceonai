@@ -365,8 +365,10 @@ describe("G0-2 teaching-quality harness", () => {
       "G0-2-05",
       "G0-2-06",
       "G0-2-07",
-      // The RW worked step that named "Option B" before submission (owner brief 2026-11-22).
+      // SATRW23GOZ2P (owner briefs 2026-11-22): the real turn, a post-submit control, and the
+      // before-submission rule, backed by the synthetic replay.
       "G0-2-08",
+      "G0-2-09",
     ]);
     for (const r of TEACHING_QUALITY_RUBRICS.slice(0, 3)) {
       expect(r.gold_response).toMatch(/^“Using Desmos, /);

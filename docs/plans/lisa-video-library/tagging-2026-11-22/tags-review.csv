@@ -1,0 +1,1232 @@
+domain,segment_id,kind,id,source,evidence
+advanced-math,00370c83-6ac9-47a0-a133-4f3219b376f2,cluster,CL.0039,agreed,Summary: GCF with both a coefficient and a variable pulled out.
+advanced-math,00370c83-6ac9-47a0-a133-4f3219b376f2,sub_skill,EE.3,agreed,Summary: factoring out a GCF from a binomial.
+advanced-math,031dccdf-3fd9-4cd0-a47f-b18193b74e2c,cluster,CL.0039,agreed,Summary: GCF with multiple variables and different powers.
+advanced-math,031dccdf-3fd9-4cd0-a47f-b18193b74e2c,sub_skill,EE.3,agreed,Summary: factoring out a GCF from a binomial.
+advanced-math,08575bb4-e31d-4a60-90bc-bce4feb4324e,cluster,CL.0035,agreed,Summary: long division to find an unknown expression.
+advanced-math,08575bb4-e31d-4a60-90bc-bce4feb4324e,sub_skill,EE.6,agreed,Summary: polynomial long division.
+advanced-math,0bf748b9-86f6-47f7-a767-f4ac12378724,cluster,CL.0030,agreed,Summary: Flower Power mnemonic for radical <-> rational exponent conversion.
+advanced-math,0bf748b9-86f6-47f7-a767-f4ac12378724,sub_skill,EE.4,agreed,Summary: rule for converting between radicals and rational exponents.
+advanced-math,10295430-69be-4030-b522-f916017e8b94,cluster,CL.0094,adjudicated,"Summary: identifies a factor via the factor theorem, i.e. substituting each candidate root into the polynomial and evaluating."
+advanced-math,10295430-69be-4030-b522-f916017e8b94,cluster,CL.0101,agreed,Summary: testing choices.
+advanced-math,10295430-69be-4030-b522-f916017e8b94,sub_skill,EE.3,agreed,Summary: identify a factor of a polynomial.
+advanced-math,11b9991e-5bdd-4bfc-9cd4-4c7660e3338b,cluster,CL.0094,agreed,Summary: a point on the graph is used in the equation to pin down the function.
+advanced-math,11b9991e-5bdd-4bfc-9cd4-4c7660e3338b,sub_skill,NLF.1,agreed,"Summary: find a rational function's equation from its graph using a point, i.e. an unknown constant from a given point."
+advanced-math,136b6326-dbf2-46ce-a989-f982586d3987,cluster,CL.0038,agreed,Summary: factoring by grouping.
+advanced-math,136b6326-dbf2-46ce-a989-f982586d3987,cluster,CL.0039,agreed,Summary: factor out each pair's GCF.
+advanced-math,136b6326-dbf2-46ce-a989-f982586d3987,sub_skill,EE.3,agreed,Summary: factor a four-term polynomial.
+advanced-math,144e3fce-63bc-4ab0-bf24-a602b02bfb4d,cluster,CL.0037,agreed,Summary: solving by factoring a trinomial.
+advanced-math,144e3fce-63bc-4ab0-bf24-a602b02bfb4d,cluster,CL.0122,agreed,"The roots come from the factored trinomial, setting each factor to zero."
+advanced-math,144e3fce-63bc-4ab0-bf24-a602b02bfb4d,sub_skill,NLE.2,agreed,Summary: solve a quadratic equation and evaluate an expression of its roots.
+advanced-math,1483e725-aaa9-42e8-a46e-29f9b222579d,cluster,CL.0072,agreed,Summary: value read from a table.
+advanced-math,1483e725-aaa9-42e8-a46e-29f9b222579d,sub_skill,NLF.1,agreed,Summary: remainder found as a function value from a table of values.
+advanced-math,148a92d0-5601-485a-9f92-ce9847e5f8af,cluster,CL.0030,agreed,Summary: convert the fractional exponent to a radical.
+advanced-math,148a92d0-5601-485a-9f92-ce9847e5f8af,cluster,CL.0034,agreed,Summary: the expression is then expanded.
+advanced-math,148a92d0-5601-485a-9f92-ce9847e5f8af,sub_skill,EE.4,agreed,Summary: simplify an expression with square roots and a fractional exponent.
+advanced-math,1b58d5c0-a78e-4a3c-916b-321df55c1161,cluster,CL.0219,agreed,The minimum is read in Desmos from the graphed quadratic's vertex (Desmos min/max lesson).
+advanced-math,1b58d5c0-a78e-4a3c-916b-321df55c1161,cluster,CL.0226,agreed,Summary: both functions (original and translated) are defined in Desmos to read the minimum of the translated one.
+advanced-math,1b58d5c0-a78e-4a3c-916b-321df55c1161,sub_skill,NLF.4,agreed,The asked quantity is the minimum (vertex) of a quadratic.
+advanced-math,1b58d5c0-a78e-4a3c-916b-321df55c1161,sub_skill,NLF.5,agreed,Summary: find the minimum of a horizontally translated quadratic function.
+advanced-math,1d4d8aed-1c09-4191-a32d-b54974b38d41,cluster,CL.0008,agreed,Summary: factor numerator and denominator and cancel common factors.
+advanced-math,1d4d8aed-1c09-4191-a32d-b54974b38d41,sub_skill,EE.3,adjudicated,"Summary: factors numerator and denominator of a rational expression; production evidence names a trinomial and a difference of squares, which EE.3 co-tags in EE.5 questions."
+advanced-math,1d4d8aed-1c09-4191-a32d-b54974b38d41,sub_skill,EE.5,agreed,Summary: simplify a rational expression (title: Operations with Rational Expressions).
+advanced-math,1fe565f6-65e8-46fa-bbf1-c3204b1fde01,cluster,CL.0006,agreed,Summary: subtract exponents.
+advanced-math,1fe565f6-65e8-46fa-bbf1-c3204b1fde01,cluster,CL.0030,agreed,Summary: convert radicals to rational exponents.
+advanced-math,1fe565f6-65e8-46fa-bbf1-c3204b1fde01,sub_skill,EE.4,agreed,Summary: rational exponent problem.
+advanced-math,20bf5021-288c-45f6-ab5d-519348852a66,cluster,CL.0120,agreed,Summary: product of solutions = c/a.
+advanced-math,20bf5021-288c-45f6-ab5d-519348852a66,sub_skill,NLE.2,agreed,Summary: find the product of the solutions of a quadratic equation.
+advanced-math,219fabd0-82ae-4999-aa3a-64781466d56e,cluster,CL.0043,agreed,Summary: vertex formula.
+advanced-math,219fabd0-82ae-4999-aa3a-64781466d56e,cluster,CL.0210,agreed,Summary: vertex via midpoint of the zeros.
+advanced-math,219fabd0-82ae-4999-aa3a-64781466d56e,sub_skill,NLF.4,agreed,Summary: find the vertex of a parabola.
+advanced-math,2a7e140e-be28-4075-a876-3ed453c02306,cluster,CL.0154,adjudicated,"Summary: finds and interprets the maximum of a downward parabola, matching the vertex of the model to its meaning."
+advanced-math,2a7e140e-be28-4075-a876-3ed453c02306,cluster,CL.0219,agreed,Summary: find the maximum of the parabola using Desmos (title: Desmos min & max lesson).
+advanced-math,2a7e140e-be28-4075-a876-3ed453c02306,sub_skill,NLF.4,agreed,Summary: find the maximum of a downward-opening parabola.
+advanced-math,2e2fc4e1-4565-4d78-9496-b40e61bf737a,cluster,CL.0219,agreed,Summary says the minimum is found by graphing in Desmos and clicking the vertex.
+advanced-math,2e2fc4e1-4565-4d78-9496-b40e61bf737a,sub_skill,NLF.4,agreed,"Summary: find the x-value where a quadratic reaches its minimum, i.e. the vertex of a quadratic given by its function."
+advanced-math,2ed3f788-881e-4be4-a0fc-5dc3b65fba0d,cluster,CL.0090,agreed,Solving |A| = k for positive k splits into two cases (absolute value equations lesson).
+advanced-math,2ed3f788-881e-4be4-a0fc-5dc3b65fba0d,sub_skill,NLE.3,agreed,Summary: solving basic absolute value equations.
+advanced-math,2ed3f788-881e-4be4-a0fc-5dc3b65fba0d,sub_skill,NLE.4,agreed,"Summary contrasts negative, zero and positive constants on the right side, which determines how many solutions exist."
+advanced-math,30a95719-93a5-41de-ba45-6e6619f69cff,cluster,CL.0047,agreed,Summary: isolate the absolute value expression first.
+advanced-math,30a95719-93a5-41de-ba45-6e6619f69cff,cluster,CL.0090,agreed,"After isolating, the absolute value equation is solved (two-case split)."
+advanced-math,30a95719-93a5-41de-ba45-6e6619f69cff,sub_skill,NLE.3,agreed,Summary: solving absolute value equations.
+advanced-math,383f1880-8635-4cc7-bfb5-2ca73f601239,cluster,CL.0037,agreed,Summary: factor the resulting quadratic equation.
+advanced-math,383f1880-8635-4cc7-bfb5-2ca73f601239,cluster,CL.0091,agreed,Summary: square both sides.
+advanced-math,383f1880-8635-4cc7-bfb5-2ca73f601239,sub_skill,NLE.3,agreed,Summary: solving a radical equation.
+advanced-math,3997907b-1db3-49d3-a4ae-502ae2873adc,cluster,CL.0216,agreed,Summary: evaluation done in Desmos.
+advanced-math,3997907b-1db3-49d3-a4ae-502ae2873adc,sub_skill,LF.1,agreed,Summary: evaluate a linear function at a given input.
+advanced-math,400112d0-281d-4cb8-bcba-e44c86b8f439,cluster,CL.0034,agreed,Converting vertex form to standard form requires expanding the squared binomial.
+advanced-math,400112d0-281d-4cb8-bcba-e44c86b8f439,cluster,CL.0101,agreed,Summary: test the answer choices to find the coefficients.
+advanced-math,400112d0-281d-4cb8-bcba-e44c86b8f439,sub_skill,NLF.4,agreed,Summary: convert a quadratic from vertex form to standard form to find coefficients.
+advanced-math,46a9c563-20e0-409d-8c79-5b4271f26972,cluster,CL.0219,agreed,Summary: graph the function in Desmos and identify the vertex's x-coordinate.
+advanced-math,46a9c563-20e0-409d-8c79-5b4271f26972,sub_skill,NLF.4,agreed,Summary: another quadratic minimum problem solved by finding the vertex's x-coordinate.
+advanced-math,485afb49-43a6-40e8-a050-1df42936eec9,cluster,CL.0094,agreed,Factor theorem evaluates the polynomial at the root.
+advanced-math,485afb49-43a6-40e8-a050-1df42936eec9,sub_skill,NLF.4,agreed,"Summary: factor theorem used, linking zeros and factors."
+advanced-math,4bcdcbb0-2ae7-48e5-925a-d4b53f510198,cluster,CL.0094,agreed,Summary: evaluate the function by hand.
+advanced-math,4bcdcbb0-2ae7-48e5-925a-d4b53f510198,cluster,CL.0216,agreed,Summary: evaluate the function using Desmos.
+advanced-math,4bcdcbb0-2ae7-48e5-925a-d4b53f510198,sub_skill,NLF.1,agreed,Summary: evaluate non-linear functions.
+advanced-math,4be8dcca-3488-4151-ae75-a37912bc8d45,cluster,CL.0159,agreed,Summary: identify the equivalent form that displays a specific feature.
+advanced-math,4be8dcca-3488-4151-ae75-a37912bc8d45,cluster,CL.0162,agreed,Summary: vertex form displays the vertex.
+advanced-math,4be8dcca-3488-4151-ae75-a37912bc8d45,cluster,CL.0163,agreed,Summary: factored form displays the zeros.
+advanced-math,4be8dcca-3488-4151-ae75-a37912bc8d45,sub_skill,NLF.4,agreed,Summary: equivalent quadratic forms (factored and vertex) displaying features.
+advanced-math,4d459d27-3bae-4245-b6a1-b53111224351,cluster,CL.0216,agreed,Summary: evaluate a combination of functions using Desmos.
+advanced-math,5032e71f-7644-4d79-b40d-bb06daacb39c,cluster,CL.0084,agreed,"Summary says intercepts are then found, which sets a variable to zero."
+advanced-math,5032e71f-7644-4d79-b40d-bb06daacb39c,cluster,CL.0087,agreed,Summary: shift by replacing x with x-h and y with y-k in the equation.
+advanced-math,561f0dbb-aebf-400a-9ead-56acdcd3d59d,cluster,CL.0038,agreed,Summary: factoring by grouping.
+advanced-math,561f0dbb-aebf-400a-9ead-56acdcd3d59d,cluster,CL.0164,agreed,Summary: factor DOTS.
+advanced-math,561f0dbb-aebf-400a-9ead-56acdcd3d59d,sub_skill,EE.3,agreed,Summary: factor by grouping and then DOTS.
+advanced-math,56c21f5e-501a-44b0-adcc-217653e9ddb1,cluster,CL.0017,agreed,Summary: expand and then combine like terms.
+advanced-math,56c21f5e-501a-44b0-adcc-217653e9ddb1,cluster,CL.0034,agreed,Expanding (a+b)^2 as a product multiplies every term by every term instead of distributing the exponent.
+advanced-math,56c21f5e-501a-44b0-adcc-217653e9ddb1,sub_skill,EE.2,agreed,Summary: square a binomial by expanding it rather than distributing the exponent.
+advanced-math,5f276c11-495c-42e1-aa42-566ea91bc940,cluster,CL.0220,agreed,Summary: graph each side in Desmos and find the intersection points.
+advanced-math,5f276c11-495c-42e1-aa42-566ea91bc940,sub_skill,NLE.3,agreed,Summary: solving a radical equation.
+advanced-math,5f29ab33-2edc-4663-b2b1-aaa24520c61e,cluster,CL.0127,agreed,Summary: setting up growth and decay models from the formula.
+advanced-math,5f29ab33-2edc-4663-b2b1-aaa24520c61e,sub_skill,NLF.3,agreed,Summary: exponential growth and decay formula with model setup.
+advanced-math,5f6d007e-43f8-4e32-9c6d-c4f34e507025,cluster,CL.0214,agreed,Summary: renaming a reserved variable before graphing.
+advanced-math,5f6d007e-43f8-4e32-9c6d-c4f34e507025,cluster,CL.0228,agreed,Summary: Desmos slider used to find the constant.
+advanced-math,5f6d007e-43f8-4e32-9c6d-c4f34e507025,sub_skill,SYS.3,agreed,Summary: constant for a linear system with no solution.
+advanced-math,61569acc-6bbc-47fd-a4e4-cbc51044c24d,cluster,CL.0087,agreed,The transformation is worked algebraically by adjusting the function's equation.
+advanced-math,61569acc-6bbc-47fd-a4e4-cbc51044c24d,cluster,CL.0094,agreed,The evaluation is done algebraically by substituting the input.
+advanced-math,61569acc-6bbc-47fd-a4e4-cbc51044c24d,sub_skill,NLF.1,agreed,Summary: the problem also asks for an evaluation of the function.
+advanced-math,61569acc-6bbc-47fd-a4e4-cbc51044c24d,sub_skill,NLF.5,agreed,Summary: polynomial function transformation problem.
+advanced-math,62bed0cb-c6df-4167-875a-42a12b2f68e5,cluster,CL.0219,agreed,"Summary: key points exported and labeled in Desmos, including the vertex."
+advanced-math,62bed0cb-c6df-4167-875a-42a12b2f68e5,sub_skill,NLF.4,agreed,"Summary: key points (vertex, intercepts) of a quadratic."
+advanced-math,62e74d55-8ed6-41f4-a8d3-557100afbc2d,cluster,CL.0043,agreed,Summary: vertex found with x = -b/(2a).
+advanced-math,62e74d55-8ed6-41f4-a8d3-557100afbc2d,sub_skill,NLF.4,agreed,Summary: find the vertex of a parabola in standard form.
+advanced-math,64aff837-8cba-4cdb-ae37-5531de028592,cluster,CL.0084,agreed,Summary: evaluate at x = 0.
+advanced-math,64aff837-8cba-4cdb-ae37-5531de028592,cluster,CL.0216,adjudicated,Summary: evaluates the translated function at x=0 in Desmos; production evidence: defines g(x) and evaluates g(0).
+advanced-math,64aff837-8cba-4cdb-ae37-5531de028592,cluster,CL.0226,agreed,Summary: translate the description to a formula and use Desmos to read the value.
+advanced-math,64aff837-8cba-4cdb-ae37-5531de028592,sub_skill,NLF.1,agreed,Summary: evaluate the translated function at x = 0.
+advanced-math,64aff837-8cba-4cdb-ae37-5531de028592,sub_skill,NLF.5,agreed,Summary: translated function built from a verbal description.
+advanced-math,66e039a7-4052-4b8b-be34-eb518903f73d,cluster,CL.0030,agreed,Summary: converting expressions between radical and rational exponent forms.
+advanced-math,66e039a7-4052-4b8b-be34-eb518903f73d,sub_skill,EE.4,agreed,Summary: worked examples converting between radical and rational exponent forms.
+advanced-math,67379a1a-8b37-445a-880c-aed887e13c78,cluster,CL.0034,agreed,Multiplying a binomial by a trinomial distributes every term over every term.
+advanced-math,67379a1a-8b37-445a-880c-aed887e13c78,cluster,CL.0053,agreed,Summary: matching coefficients after expanding to find the unknown constant.
+advanced-math,67379a1a-8b37-445a-880c-aed887e13c78,cluster,CL.0089,agreed,The unknown constant product is solved from the matched coefficients.
+advanced-math,67379a1a-8b37-445a-880c-aed887e13c78,sub_skill,EE.2,agreed,Summary: worked example multiplying a binomial by a trinomial.
+advanced-math,6b59bb49-a85d-4b06-82d4-a82138a0495d,cluster,CL.0210,agreed,Summary: solved using the symmetry of a parabola.
+advanced-math,6b59bb49-a85d-4b06-82d4-a82138a0495d,sub_skill,NLF.4,agreed,Summary: quadratic word problem about a projectile's height.
+advanced-math,6b89e871-d8c5-4acb-9a92-2f79f13c318c,cluster,CL.0094,agreed,Evaluating nested functions substitutes each input into the rule step by step.
+advanced-math,6b89e871-d8c5-4acb-9a92-2f79f13c318c,cluster,CL.0095,adjudicated,Summary: solves nested functions step by step; production evidence: replaces g(x) with its value 3 inside f(g(x)).
+advanced-math,6b89e871-d8c5-4acb-9a92-2f79f13c318c,sub_skill,NLF.1,agreed,"Summary: solve nested (non-linear) functions step by step, i.e. evaluate outputs."
+advanced-math,6cb43da1-82ed-458d-90ac-166dc08fc8c0,cluster,CL.0008,agreed,Simplifying the rational expression after factoring cancels the common factor.
+advanced-math,6cb43da1-82ed-458d-90ac-166dc08fc8c0,cluster,CL.0164,agreed,Summary: factor a non-perfect-square difference of squares using square roots.
+advanced-math,6cb43da1-82ed-458d-90ac-166dc08fc8c0,sub_skill,EE.3,agreed,Summary: a difference of squares must be factored.
+advanced-math,6cb43da1-82ed-458d-90ac-166dc08fc8c0,sub_skill,EE.5,agreed,Summary: simplifying a rational expression.
+advanced-math,6d3af567-930c-4aec-bf99-f4e45cc1bfa6,cluster,CL.0008,agreed,Summary: factor the denominator and cancel common binomial factors.
+advanced-math,6d3af567-930c-4aec-bf99-f4e45cc1bfa6,sub_skill,EE.5,agreed,Summary: simplify a rational expression with a polynomial denominator.
+advanced-math,6d9f90fd-8e2a-4cca-81b2-48d270d4e4f5,cluster,CL.0039,agreed,Summary: first pull out a GCF.
+advanced-math,6d9f90fd-8e2a-4cca-81b2-48d270d4e4f5,cluster,CL.0164,agreed,Summary: apply difference of squares twice.
+advanced-math,6d9f90fd-8e2a-4cca-81b2-48d270d4e4f5,sub_skill,EE.3,agreed,Summary: factoring an expression.
+advanced-math,6dcb74ef-cae4-4a6b-92d7-0777068dff89,cluster,CL.0094,adjudicated,Summary: decides which polynomial is divisible by a linear factor; the factor-theorem check substitutes the root into each polynomial.
+advanced-math,6dcb74ef-cae4-4a6b-92d7-0777068dff89,cluster,CL.0101,adjudicated,Summary: which polynomial is divisible by the given factor; each polynomial choice is tested against the condition.
+advanced-math,6dcb74ef-cae4-4a6b-92d7-0777068dff89,sub_skill,EE.3,agreed,Summary: which polynomial is divisible by (has) a given linear factor.
+advanced-math,6def55f5-9cfc-43b5-9ef9-1d9dfa128c72,sub_skill,NLF.4,agreed,Summary: the original polynomial's roots (zeros) are found first.
+advanced-math,6def55f5-9cfc-43b5-9ef9-1d9dfa128c72,sub_skill,NLF.5,agreed,Summary: polynomial translation problem solved by shifting the roots.
+advanced-math,6fabd282-fbf0-46fe-97d4-ee76271b15de,cluster,CL.0226,adjudicated,Summary: polynomial translation problem solved in Desmos by graphing the original and translated functions and reading the intercepts.
+advanced-math,6fabd282-fbf0-46fe-97d4-ee76271b15de,cluster,CL.0230,agreed,Summary: graph the functions in Desmos and read the intercepts.
+advanced-math,6fabd282-fbf0-46fe-97d4-ee76271b15de,sub_skill,NLF.4,agreed,The asked quantities are the polynomial's intercepts/zeros.
+advanced-math,6fabd282-fbf0-46fe-97d4-ee76271b15de,sub_skill,NLF.5,agreed,Summary: the polynomial translation problem from the prior segment.
+advanced-math,73231aea-6b46-4a54-8bf2-9d1b9270c80f,cluster,CL.0177,adjudicated,"Summary: overview of linear-quadratic systems and their intersection scenarios, i.e. solutions counted as the points where the graphs cross."
+advanced-math,73231aea-6b46-4a54-8bf2-9d1b9270c80f,sub_skill,NLE.4,agreed,"Summary: possible intersection scenarios, i.e. how many intersection points can occur."
+advanced-math,73231aea-6b46-4a54-8bf2-9d1b9270c80f,sub_skill,NLE.5,agreed,Summary: overview of linear and quadratic systems.
+advanced-math,73ee8b99-0d8d-4bb2-bbde-0e594015337f,cluster,CL.0030,agreed,Summary: convert radical answer choices to rational exponents.
+advanced-math,73ee8b99-0d8d-4bb2-bbde-0e594015337f,cluster,CL.0101,adjudicated,Summary: each radical answer choice is converted and simplified to see which matches the given rational exponent.
+advanced-math,73ee8b99-0d8d-4bb2-bbde-0e594015337f,sub_skill,EE.4,agreed,Summary: SAT question matching radical answer choices to a rational exponent.
+advanced-math,7578c5b9-e7f3-4820-9511-6c9726876377,cluster,CL.0006,agreed,"Summary: product, quotient and power rules."
+advanced-math,7578c5b9-e7f3-4820-9511-6c9726876377,cluster,CL.0030,agreed,Summary: rational exponent rule (radical <-> fractional exponent).
+advanced-math,7578c5b9-e7f3-4820-9511-6c9726876377,cluster,CL.0079,agreed,Summary: negative exponent rule.
+advanced-math,7578c5b9-e7f3-4820-9511-6c9726876377,sub_skill,EE.4,agreed,Summary: overview of exponent rules including negative and rational exponents.
+advanced-math,7a8610a5-62f1-4065-9297-48b298d21a09,cluster,CL.0228,agreed,Summary: Desmos slider used to find the constant.
+advanced-math,7a8610a5-62f1-4065-9297-48b298d21a09,sub_skill,SYS.3,agreed,Summary: constant that makes a linear system have no solution.
+advanced-math,7d08f0fc-c852-45d3-9854-ef60ba597cf3,cluster,CL.0120,agreed,Summary: sum of solutions = -b/a.
+advanced-math,7d08f0fc-c852-45d3-9854-ef60ba597cf3,sub_skill,NLE.2,agreed,Summary: sum of solutions of a quadratic equation.
+advanced-math,824bc54e-3cbe-4078-aa7d-2dc7825e09a9,cluster,CL.0078,agreed,Interpreting the time period of an exponential relates to the exponent's time scaling (t/k).
+advanced-math,824bc54e-3cbe-4078-aa7d-2dc7825e09a9,cluster,CL.0154,agreed,Interpreting the growth rate and period matches numbers in the model to their meaning.
+advanced-math,824bc54e-3cbe-4078-aa7d-2dc7825e09a9,sub_skill,NLF.3,agreed,Summary: interpret the growth rate and time period of an exponential function.
+advanced-math,826b75f8-f147-4008-aefa-48e22ded82e8,cluster,CL.0039,agreed,Summary: pull out a purely numerical GCF.
+advanced-math,826b75f8-f147-4008-aefa-48e22ded82e8,sub_skill,EE.3,agreed,Summary: factoring out a numerical GCF from a trinomial.
+advanced-math,82dd2f2a-1558-41f4-8beb-9b7df860f1b0,cluster,CL.0228,adjudicated,Summary: uses Desmos to find the constant k giving exactly one real solution; production evidence: slider for k.
+advanced-math,82dd2f2a-1558-41f4-8beb-9b7df860f1b0,sub_skill,NLE.3,agreed,Summary: the equation is a radical equation.
+advanced-math,82dd2f2a-1558-41f4-8beb-9b7df860f1b0,sub_skill,NLE.4,agreed,Summary: find k so the equation has exactly one real solution.
+advanced-math,83f2c403-dcac-40b3-bf71-5bdfce779e7b,cluster,CL.0215,agreed,Summary: graph the expression and choices in Desmos to find the overlapping graph.
+advanced-math,83f2c403-dcac-40b3-bf71-5bdfce779e7b,sub_skill,EE.3,agreed,Summary: a polynomial factoring question (target is a factored form).
+advanced-math,87866eeb-101d-413c-bcfd-0112fd137a4b,cluster,CL.0094,adjudicated,"Summary: identifies factors of a cubic by testing roots from the choices, substituting each value into the cubic."
+advanced-math,87866eeb-101d-413c-bcfd-0112fd137a4b,cluster,CL.0101,agreed,Summary: testing roots from the choices.
+advanced-math,87866eeb-101d-413c-bcfd-0112fd137a4b,sub_skill,EE.3,agreed,Summary: identify factors of a cubic polynomial.
+advanced-math,89b3a2db-6622-4807-82cd-870e6261ae9b,cluster,CL.0037,agreed,Summary: then factor the remaining quadratic trinomial.
+advanced-math,89b3a2db-6622-4807-82cd-870e6261ae9b,cluster,CL.0039,agreed,Summary: first pull out the greatest common factor.
+advanced-math,89b3a2db-6622-4807-82cd-870e6261ae9b,sub_skill,EE.3,agreed,Summary: factoring polynomials.
+advanced-math,89f7b069-d104-4577-99cb-282101d1ad60,cluster,CL.0038,agreed,Summary: factoring by grouping when the leading coefficient is not 1.
+advanced-math,89f7b069-d104-4577-99cb-282101d1ad60,cluster,CL.0122,agreed,Solving the factored quadratic equation sets each factor to zero.
+advanced-math,89f7b069-d104-4577-99cb-282101d1ad60,sub_skill,NLE.2,agreed,Summary: solving a quadratic equation by factoring.
+advanced-math,8b3e7e2e-79aa-4761-a1c1-d40c272015d2,cluster,CL.0037,agreed,Summary: sum-product puzzle method for factoring the trinomial.
+advanced-math,8b3e7e2e-79aa-4761-a1c1-d40c272015d2,sub_skill,EE.3,agreed,Summary: factoring quadratic trinomials x^2 + bx + c.
+advanced-math,8d09fcfc-3bb3-470f-937d-d4ad2f859ae4,cluster,CL.0006,agreed,"Summary: product, power and quotient rules."
+advanced-math,8d09fcfc-3bb3-470f-937d-d4ad2f859ae4,cluster,CL.0030,agreed,Summary: rational exponent rule.
+advanced-math,8d09fcfc-3bb3-470f-937d-d4ad2f859ae4,cluster,CL.0079,agreed,Summary: negative exponent rule.
+advanced-math,8d09fcfc-3bb3-470f-937d-d4ad2f859ae4,sub_skill,EE.4,agreed,"Summary: exponent rules with examples, including negative and rational exponents."
+advanced-math,9445e04f-00c4-41a3-a6c4-b047f8713d29,cluster,CL.0008,agreed,Holes come from a cancelled common factor whose excluded value remains (title: equivalent everywhere except one point).
+advanced-math,9445e04f-00c4-41a3-a6c4-b047f8713d29,sub_skill,EE.5,agreed,"Summary: holes and vertical asymptotes in graphs of rational functions, explaining the excluded point after simplification."
+advanced-math,957eaef2-fe9d-4391-b46c-169a82c8b58a,cluster,CL.0164,agreed,Summary: difference of squares formula.
+advanced-math,957eaef2-fe9d-4391-b46c-169a82c8b58a,sub_skill,EE.3,agreed,Summary: difference of squares factoring examples.
+advanced-math,9b95e557-e5fe-44a1-b89e-d7af62011996,cluster,CL.0007,agreed,Summary: quadratic formula overview.
+advanced-math,9b95e557-e5fe-44a1-b89e-d7af62011996,sub_skill,NLE.2,agreed,Summary: quadratic formula used to find solutions of a quadratic equation.
+advanced-math,9c7c58ee-f61b-4a70-8ec6-9cef241e8cf1,cluster,CL.0017,agreed,Summary: combine like terms of identical absolute value expressions.
+advanced-math,9c7c58ee-f61b-4a70-8ec6-9cef241e8cf1,cluster,CL.0203,agreed,Identical absolute value expressions are treated as one unit to be combined.
+advanced-math,9c7c58ee-f61b-4a70-8ec6-9cef241e8cf1,sub_skill,NLE.3,agreed,Summary: solving absolute value equations.
+advanced-math,9c8dfd24-5e83-4feb-a65a-bc6eb0aedab6,cluster,CL.0017,agreed,Summary: combine like terms after FOILing.
+advanced-math,9c8dfd24-5e83-4feb-a65a-bc6eb0aedab6,cluster,CL.0034,agreed,Summary: FOIL multiplies each term by each term.
+advanced-math,9c8dfd24-5e83-4feb-a65a-bc6eb0aedab6,sub_skill,EE.2,agreed,Summary: expand and multiply two binomials.
+advanced-math,a0ce0a8a-017c-46e5-a3ad-0a65cfb69109,cluster,CL.0219,agreed,Summary: minimum found in Desmos.
+advanced-math,a0ce0a8a-017c-46e5-a3ad-0a65cfb69109,cluster,CL.0226,agreed,Title (function translations Desmos lesson) and summary: the translated function is handled in Desmos to read its feature.
+advanced-math,a0ce0a8a-017c-46e5-a3ad-0a65cfb69109,sub_skill,NLF.4,agreed,Summary: x-value where the quadratic reaches its minimum.
+advanced-math,a0ce0a8a-017c-46e5-a3ad-0a65cfb69109,sub_skill,NLF.5,agreed,Summary: translated quadratic function.
+advanced-math,ab0fd8ce-fd91-4c0c-b084-152d2459b9e7,cluster,CL.0084,agreed,Finding intercepts from the equation sets a variable to zero.
+advanced-math,ab0fd8ce-fd91-4c0c-b084-152d2459b9e7,sub_skill,NLF.1,agreed,Summary: find y-intercepts (and x-intercepts) of rational functions from their equations.
+advanced-math,abf81b40-84ee-4934-90b5-cc1e0be185a8,cluster,CL.0020,agreed,Summary: complete the square on a circle equation with a symbolic constant.
+advanced-math,abf81b40-84ee-4934-90b5-cc1e0be185a8,cluster,CL.0073,adjudicated,"Summary: center and radius found after completing the square; production evidence: reads center (-5p, 3p) and r^2 = 9p^2 from standard form."
+advanced-math,abf81b40-84ee-4934-90b5-cc1e0be185a8,sub_skill,CIR1,agreed,Summary: find a circle's center and radius from its equation.
+advanced-math,adbc1213-614b-4339-b3de-9b87c3c29714,cluster,CL.0215,agreed,Summary: use Desmos by graphing and matching overlapping curves.
+advanced-math,adbc1213-614b-4339-b3de-9b87c3c29714,sub_skill,EE.5,agreed,Summary: find the equivalent rational expression.
+advanced-math,ae80c751-79a0-494c-bc77-3a43ca5c324b,cluster,CL.0038,agreed,Summary: factoring by grouping.
+advanced-math,ae80c751-79a0-494c-bc77-3a43ca5c324b,cluster,CL.0039,agreed,Summary: look for an overall GCF first.
+advanced-math,ae80c751-79a0-494c-bc77-3a43ca5c324b,sub_skill,EE.3,agreed,Summary: factoring by grouping.
+advanced-math,aeefa5f8-182e-4d13-8b41-e5e2f0eec537,cluster,CL.0226,agreed,Title: function translations Desmos lesson; the translated function is defined in Desmos.
+advanced-math,aeefa5f8-182e-4d13-8b41-e5e2f0eec537,cluster,CL.0230,agreed,Summary: x-intercepts found using Desmos.
+advanced-math,aeefa5f8-182e-4d13-8b41-e5e2f0eec537,sub_skill,NLF.4,agreed,Summary: sum of the x-intercepts (zeros) of the cubic.
+advanced-math,aeefa5f8-182e-4d13-8b41-e5e2f0eec537,sub_skill,NLF.5,agreed,Summary: translated cubic function.
+advanced-math,af257da6-a45c-4200-b5de-66e726e5b9c0,cluster,CL.0025,agreed,Summary: use the discriminant.
+advanced-math,af257da6-a45c-4200-b5de-66e726e5b9c0,sub_skill,NLE.4,agreed,Summary: number of x-intercepts or intersections of a parabola.
+advanced-math,af257da6-a45c-4200-b5de-66e726e5b9c0,sub_skill,NLE.5,adjudicated,Summary: discriminant for the number of intersections of a parabola with another graph; production evidence: substitutes the line into the parabola (a linear-nonlinear system).
+advanced-math,b3a9c9fc-e132-4ee3-9c8f-dfa840380e21,cluster,CL.0216,agreed,The evaluation is done in Desmos by defining the function and evaluating it.
+advanced-math,b3a9c9fc-e132-4ee3-9c8f-dfa840380e21,cluster,CL.0226,agreed,"Summary: the transformation problem is solved in Desmos, defining the transformed function."
+advanced-math,b3a9c9fc-e132-4ee3-9c8f-dfa840380e21,sub_skill,NLF.1,agreed,Summary: the problem also asks for an evaluation of the function.
+advanced-math,b3a9c9fc-e132-4ee3-9c8f-dfa840380e21,sub_skill,NLF.5,agreed,Summary: polynomial function transformation problem.
+advanced-math,b712e408-773b-4e67-b66c-4c5b47976266,cluster,CL.0162,agreed,Summary: identify the vertex from vertex form.
+advanced-math,b712e408-773b-4e67-b66c-4c5b47976266,sub_skill,NLF.4,agreed,Summary: vertex form of a quadratic and how to identify the vertex.
+advanced-math,bb99a207-ef45-4e5a-8077-3a6fbce2ba9d,cluster,CL.0087,agreed,Summary: the translation is applied by adjusting the function's equation.
+advanced-math,bb99a207-ef45-4e5a-8077-3a6fbce2ba9d,sub_skill,NLF.5,agreed,Summary: apply a horizontal and vertical translation to a rational function's equation.
+advanced-math,c3005d06-d0e4-4ba8-aada-b8a36de342f9,cluster,CL.0038,agreed,Summary: AC method and factoring by grouping.
+advanced-math,c3005d06-d0e4-4ba8-aada-b8a36de342f9,sub_skill,EE.3,agreed,Summary: factoring a quadratic trinomial.
+advanced-math,c4f36252-a68c-4528-9f57-d59fa07ba3ee,cluster,CL.0025,agreed,Summary: discriminant overview.
+advanced-math,c4f36252-a68c-4528-9f57-d59fa07ba3ee,sub_skill,NLE.4,agreed,Summary: discriminant determines the number of real solutions.
+advanced-math,c512bb68-177a-4175-bb7b-79c5c5f0c141,sub_skill,NLE.3,agreed,"Summary: identifying and setting up radical, rational and absolute value equations."
+advanced-math,c74dc2de-983f-4fc3-822f-304ff5e572ea,cluster,CL.0007,agreed,Summary: quadratic formula.
+advanced-math,c74dc2de-983f-4fc3-822f-304ff5e572ea,cluster,CL.0037,agreed,Summary: factoring is one route to the roots.
+advanced-math,c74dc2de-983f-4fc3-822f-304ff5e572ea,cluster,CL.0120,agreed,Summary: sum/product formulas.
+advanced-math,c74dc2de-983f-4fc3-822f-304ff5e572ea,sub_skill,NLE.2,agreed,Summary: find the roots of a quadratic equation.
+advanced-math,c80e2ecf-526e-4294-8b41-c0287056a369,cluster,CL.0038,agreed,The AC method splits the middle term and factors by grouping.
+advanced-math,c80e2ecf-526e-4294-8b41-c0287056a369,sub_skill,EE.3,agreed,Summary: AC method for factoring quadratic trinomials with leading coefficient not 1.
+advanced-math,c967b72e-124c-402a-a69b-631d6fd29a9d,cluster,CL.0219,agreed,Summary: minimum found with Desmos graphing features.
+advanced-math,c967b72e-124c-402a-a69b-631d6fd29a9d,cluster,CL.0226,adjudicated,"Summary: minimum of a transformed quadratic via Desmos; production evidence: defines f(x), graphs f(x+10) and reads its minimum."
+advanced-math,c967b72e-124c-402a-a69b-631d6fd29a9d,sub_skill,NLF.4,agreed,Summary: find the minimum of a quadratic function.
+advanced-math,c967b72e-124c-402a-a69b-631d6fd29a9d,sub_skill,NLF.5,agreed,Summary: the quadratic is a transformed function.
+advanced-math,cc8c9e0a-7932-4ff1-bb03-9384fdfeab16,cluster,CL.0039,agreed,Summary: factor out a GCF first.
+advanced-math,cc8c9e0a-7932-4ff1-bb03-9384fdfeab16,cluster,CL.0164,agreed,Summary: the remaining binomial is factored as a difference of squares.
+advanced-math,cc8c9e0a-7932-4ff1-bb03-9384fdfeab16,sub_skill,EE.3,agreed,Summary: factor a GCF then a difference of squares.
+advanced-math,ccd7c1c2-45b3-46e9-a6e1-f0394acf37ea,cluster,CL.0043,agreed,Summary: vertex formula.
+advanced-math,ccd7c1c2-45b3-46e9-a6e1-f0394acf37ea,cluster,CL.0087,agreed,Summary: translation rules applied to the function.
+advanced-math,ccd7c1c2-45b3-46e9-a6e1-f0394acf37ea,sub_skill,NLF.4,agreed,Summary: find the minimum of a quadratic using the vertex formula.
+advanced-math,ccd7c1c2-45b3-46e9-a6e1-f0394acf37ea,sub_skill,NLF.5,agreed,Summary: the quadratic is transformed and translation rules are applied.
+advanced-math,d119465d-00ca-448a-87d4-a0f95376cfaf,cluster,CL.0006,agreed,Summary: overview of the fundamental exponent rules.
+advanced-math,d119465d-00ca-448a-87d4-a0f95376cfaf,sub_skill,EE.4,agreed,Summary: exponent rules and the requirement of a common base.
+advanced-math,d5542e3c-a5a6-46de-9a28-138c15064dfc,cluster,CL.0008,agreed,Summary: factoring and cancelling; title stresses equivalence everywhere except one point (excluded value).
+advanced-math,d5542e3c-a5a6-46de-9a28-138c15064dfc,cluster,CL.0101,agreed,Summary: testing is used to confirm the answer (methods include backsolve).
+advanced-math,d5542e3c-a5a6-46de-9a28-138c15064dfc,sub_skill,EE.3,adjudicated,"Summary: rational expression simplified by factoring then cancelling; production evidence: factors the trinomial x^2 + 2x - 15, which meets EE.3's co-tag rule."
+advanced-math,d5542e3c-a5a6-46de-9a28-138c15064dfc,sub_skill,EE.5,agreed,Summary: rational expression simplification problem.
+advanced-math,d5cd3f65-c08c-4de7-9aa8-2faf568d9239,cluster,CL.0104,agreed,Summary: set up quadratic equations from word problems.
+advanced-math,d5cd3f65-c08c-4de7-9aa8-2faf568d9239,sub_skill,NLF.4,agreed,Summary: set up quadratic equations from word problems and solve them.
+advanced-math,d77ec984-8a43-4666-a4e3-14f0606a5843,cluster,CL.0228,agreed,Summary: Desmos slider used to find the constant.
+advanced-math,d77ec984-8a43-4666-a4e3-14f0606a5843,sub_skill,NLE.4,agreed,Summary: find a constant that gives the system exactly one solution.
+advanced-math,d77ec984-8a43-4666-a4e3-14f0606a5843,sub_skill,NLE.5,agreed,Summary: the system is linear-quadratic.
+advanced-math,d84b9273-64f9-422e-bbb1-c33bb1e0da85,cluster,CL.0038,agreed,Summary: then apply the AC method (split and group).
+advanced-math,d84b9273-64f9-422e-bbb1-c33bb1e0da85,cluster,CL.0039,agreed,Summary: first factor out a GCF.
+advanced-math,d84b9273-64f9-422e-bbb1-c33bb1e0da85,sub_skill,EE.3,agreed,Summary: factoring a higher-degree polynomial.
+advanced-math,d94692a0-d418-46b5-9ae9-304953295959,cluster,CL.0047,agreed,Summary: isolating the radius variable in a formula.
+advanced-math,d94692a0-d418-46b5-9ae9-304953295959,cluster,CL.0099,agreed,Isolating r in V = 4/3 pi r^3 requires taking a cube root of both sides.
+advanced-math,d94692a0-d418-46b5-9ae9-304953295959,sub_skill,NLE.1,agreed,Summary: isolate the radius variable in the sphere volume formula.
+advanced-math,d962e5be-299f-4c08-8097-662bd1dbe1ab,cluster,CL.0084,agreed,"Summary: initial value found, i.e. evaluating at x = 0."
+advanced-math,d962e5be-299f-4c08-8097-662bd1dbe1ab,cluster,CL.0150,agreed,Summary: interpret function notation in context.
+advanced-math,d962e5be-299f-4c08-8097-662bd1dbe1ab,sub_skill,NLF.1,agreed,Summary: find the initial value of a quadratic function.
+advanced-math,d962e5be-299f-4c08-8097-662bd1dbe1ab,sub_skill,NLF.2,agreed,Summary: interpret function notation of a quadratic in context.
+advanced-math,de66f0f3-4db0-46ac-926c-98e14aed356b,cluster,CL.0215,agreed,Summary: use Desmos to verify equivalent polynomial expressions by graphing and comparing.
+advanced-math,de66f0f3-4db0-46ac-926c-98e14aed356b,sub_skill,EE.2,agreed,"Summary: verify equivalent polynomial expressions (video on operations with polynomials, preceding segment expands a product)."
+advanced-math,df588872-8f5c-4b41-ba43-577ca94226d7,cluster,CL.0154,agreed,Summary: matching the x-intercepts of the model to their meaning in context.
+advanced-math,df588872-8f5c-4b41-ba43-577ca94226d7,sub_skill,NLF.2,agreed,Summary: interpret the x-intercepts of a quadratic function in context.
+advanced-math,e1bcf07b-80a7-4364-907b-8fa20afdb4d1,cluster,CL.0215,agreed,Summary: graph the original expression and the choices in Desmos to find the match.
+advanced-math,e1bcf07b-80a7-4364-907b-8fa20afdb4d1,sub_skill,EE.5,agreed,Summary: subtract rational expressions.
+advanced-math,e21923d8-3ce6-4b3c-b1a8-566b0e3b825b,cluster,CL.0087,agreed,Summary: replace x with x-h and add k to shift the function.
+advanced-math,e21923d8-3ce6-4b3c-b1a8-566b0e3b825b,sub_skill,NLF.5,agreed,Summary: translate explicit functions horizontally and vertically with g(x) = f(x-h) + k.
+advanced-math,ef401464-3cf3-4e3e-8402-61d8892b4296,cluster,CL.0216,agreed,Summary: evaluation done in Desmos (title: Desmos lesson Evaluating Functions).
+advanced-math,ef401464-3cf3-4e3e-8402-61d8892b4296,sub_skill,NLF.1,agreed,Summary: evaluate a cubic function at a given input.
+advanced-math,f5284023-4e80-4749-8cb6-4b38e0a39110,cluster,CL.0225,agreed,Summary: the intersection is found in Desmos via export points of interest.
+advanced-math,f5284023-4e80-4749-8cb6-4b38e0a39110,sub_skill,NLE.4,adjudicated,Summary: linear-quadratic system with one intersection; production evidence: the stem states the line meets the parabola at exactly one point (a stated solution count).
+advanced-math,f5284023-4e80-4749-8cb6-4b38e0a39110,sub_skill,NLE.5,agreed,Summary: linear-quadratic system with one intersection.
+advanced-math,f5f38c6e-ae75-4c57-a258-c83ff6f0060c,cluster,CL.0095,agreed,Solving a linear-quadratic system algebraically substitutes one equation into the other.
+advanced-math,f5f38c6e-ae75-4c57-a258-c83ff6f0060c,cluster,CL.0225,agreed,Summary: the system is also solved using Desmos (graph and read the intersection).
+advanced-math,f5f38c6e-ae75-4c57-a258-c83ff6f0060c,sub_skill,NLE.5,agreed,Summary: solving a linear-quadratic system.
+advanced-math,f8cdc94e-601f-4a28-9f0f-c27806e49623,cluster,CL.0008,agreed,Simplifying the rational expression follows the factor-and-cancel method of this video.
+advanced-math,f8cdc94e-601f-4a28-9f0f-c27806e49623,sub_skill,EE.5,agreed,Summary: practice problem to simplify a rational expression.
+advanced-math,f8ff6088-f4b6-4315-8edf-6fa258f750e1,cluster,CL.0077,agreed,Summary: checking for extraneous solutions.
+advanced-math,f8ff6088-f4b6-4315-8edf-6fa258f750e1,cluster,CL.0090,agreed,Solving the absolute value equation splits it into two cases.
+advanced-math,f8ff6088-f4b6-4315-8edf-6fa258f750e1,sub_skill,NLE.3,agreed,Summary: absolute value equations with a variable on the other side.
+advanced-math,fb75e3a6-6cd8-4531-9a3e-ef2e0f626d87,cluster,CL.0035,agreed,Summary: polynomial long division.
+advanced-math,fb75e3a6-6cd8-4531-9a3e-ef2e0f626d87,sub_skill,EE.6,agreed,Summary: equivalent rational expression via polynomial long division.
+advanced-math,feb13c15-74ea-44a5-93f0-9abc4e017c8b,cluster,CL.0228,agreed,Summary: a Desmos slider is used on the unknown constant to match the graphs.
+advanced-math,feb13c15-74ea-44a5-93f0-9abc4e017c8b,sub_skill,EE.5,agreed,Summary: find an unknown constant in equivalent rational expressions.
+algebra,01006cf3-630d-4241-a71b-a3a2ae96312a,cluster,CL.0072,agreed,Reads the y-intercept off the Desmos graph.
+algebra,01006cf3-630d-4241-a71b-a3a2ae96312a,sub_skill,NLF.1,agreed,Summary: finds the y-intercept of another exponential function.
+algebra,0383008a-6d7f-423d-b13a-931f18cb21d9,cluster,CL.0226,agreed,Defines the base function and the shifted one in Desmos.
+algebra,0383008a-6d7f-423d-b13a-931f18cb21d9,sub_skill,NLF.5,agreed,Summary: graphs transformations by defining a base function and applying shifts.
+algebra,0410a8fa-8306-4cc6-b0bb-c1ef38d44004,cluster,CL.0217,agreed,Graphs the system of inequalities in Desmos.
+algebra,0410a8fa-8306-4cc6-b0bb-c1ef38d44004,cluster,CL.0228,adjudicated,Summary: finds the unknown coordinate of a solution point of a system of inequalities using a Desmos slider.
+algebra,0410a8fa-8306-4cc6-b0bb-c1ef38d44004,sub_skill,LI.4,agreed,Summary: finds a coordinate of a solution point of a system of inequalities.
+algebra,0fce6b77-4c6e-4500-a15c-5599c6432b4f,cluster,CL.0177,adjudicated,Summary: finds the number of intersection points of two linear equations; the count of crossings is the answer.
+algebra,0fce6b77-4c6e-4500-a15c-5599c6432b4f,cluster,CL.0225,agreed,Graphs the two linear equations in Desmos to count where they cross.
+algebra,0fce6b77-4c6e-4500-a15c-5599c6432b4f,sub_skill,SYS.3,agreed,Summary: finds the number of intersection points of two linear equations.
+algebra,172eba31-5e87-4bf2-a3ee-a4cc121dd6b7,cluster,CL.0212,agreed,Graphs the circle and uses the midpoint function.
+algebra,172eba31-5e87-4bf2-a3ee-a4cc121dd6b7,sub_skill,CIR1,agreed,Summary: finds a circle's center by graphing it.
+algebra,2007aa81-7374-4df8-b889-379ba4fb59c6,cluster,CL.0225,agreed,Uses Desmos intersection to solve the system.
+algebra,2007aa81-7374-4df8-b889-379ba4fb59c6,sub_skill,SYS.1,agreed,Summary: solves a linear system for y.
+algebra,251455c7-07e1-43ea-a12c-2584890a4792,cluster,CL.0047,agreed,Solves the linear inequality algebraically by isolating x.
+algebra,251455c7-07e1-43ea-a12c-2584890a4792,cluster,CL.0217,adjudicated,Summary: solves the linear inequality graphically in Desmos to find the range of x (shaded region).
+algebra,251455c7-07e1-43ea-a12c-2584890a4792,sub_skill,LI.2,agreed,Solves a linear inequality by hand (isolating x) to find the range of x.
+algebra,260231a8-475b-4077-967c-969ee0f0ade5,cluster,CL.0224,agreed,Uses Desmos list statistics.
+algebra,260231a8-475b-4077-967c-969ee0f0ade5,sub_skill,OVD.2,agreed,Summary: computes mean and median of a list.
+algebra,26fd777b-3f9c-4702-83a7-7aa2d326abc6,cluster,CL.0116,agreed,Uses the negative-reciprocal slope.
+algebra,26fd777b-3f9c-4702-83a7-7aa2d326abc6,cluster,CL.0128,agreed,Writes the line through the given point.
+algebra,26fd777b-3f9c-4702-83a7-7aa2d326abc6,sub_skill,LE2.5,agreed,Summary: finds a perpendicular line's equation through a point.
+algebra,2ac01b7b-030c-4720-953c-6e493259dafb,cluster,CL.0228,agreed,Tests choices with a Desmos slider.
+algebra,2ac01b7b-030c-4720-953c-6e493259dafb,sub_skill,SYS.3,agreed,Summary: finds the constant giving no solution for a linear system.
+algebra,2c452ed6-4bd0-47de-a000-05de287267e3,cluster,CL.0228,agreed,Tests choices with a Desmos slider.
+algebra,2c452ed6-4bd0-47de-a000-05de287267e3,sub_skill,SYS.3,agreed,Summary: finds the constant giving no solution for a linear system.
+algebra,2f8b2b2d-f244-4c3f-9fde-35f8d10479b9,cluster,CL.0160,agreed,Explains reading slope and y-intercept from y = mx + b.
+algebra,2f8b2b2d-f244-4c3f-9fde-35f8d10479b9,sub_skill,LE2.4,agreed,"Overview of slope-intercept form: slope, y-intercept and graphing a line."
+algebra,347bba88-c85c-4847-999d-9195bab17514,cluster,CL.0172,agreed,Shows parallel lines have equal slopes.
+algebra,347bba88-c85c-4847-999d-9195bab17514,sub_skill,LE2.5,agreed,Summary: parallel lines share the same slope.
+algebra,37cfd781-5aef-4a24-8257-ce87292b397b,cluster,CL.0220,agreed,Types the equation directly and reads the vertical line's x.
+algebra,37cfd781-5aef-4a24-8257-ce87292b397b,sub_skill,LE1.1,agreed,Summary: solves multi-step linear equations in Desmos.
+algebra,3854498f-86ac-4705-8fa1-89c4a6831c9a,cluster,CL.0225,agreed,Graphs the system in Desmos and clicks the intersection.
+algebra,3854498f-86ac-4705-8fa1-89c4a6831c9a,sub_skill,SYS.2,agreed,Summary: finds the intersection in Desmos and evaluates an expression.
+algebra,3e43c953-9d6b-460a-a833-cd29a29bf474,cluster,CL.0220,agreed,Graphs left and right sides and clicks the crossings.
+algebra,3e43c953-9d6b-460a-a833-cd29a29bf474,sub_skill,NLE.3,agreed,Summary: solves absolute value equations in Desmos.
+algebra,42610935-9a86-4d7e-84f9-5d31301b63ca,cluster,CL.0177,adjudicated,Summary: determines the number of solutions of equations by where the Desmos graphs cross.
+algebra,42610935-9a86-4d7e-84f9-5d31301b63ca,cluster,CL.0225,adjudicated,Summary: uses Desmos graphs to determine the number of solutions; graphs both sides and reads the intersections.
+algebra,42610935-9a86-4d7e-84f9-5d31301b63ca,sub_skill,LE1.5,agreed,Summary: determines the number of solutions of equations in Desmos.
+algebra,44b8db51-9327-4355-9056-e8d5265ab34f,cluster,CL.0047,agreed,Isolates the variable in each case.
+algebra,44b8db51-9327-4355-9056-e8d5265ab34f,cluster,CL.0090,agreed,Splits the absolute value equation into two cases.
+algebra,44b8db51-9327-4355-9056-e8d5265ab34f,sub_skill,NLE.3,agreed,Summary: solves an absolute value equation by splitting into two cases.
+algebra,473a8e60-84f6-4551-b3b7-e732399b369c,cluster,CL.0220,agreed,Graphs both sides and finds their intersection.
+algebra,473a8e60-84f6-4551-b3b7-e732399b369c,sub_skill,NLE.3,agreed,Summary: solves an absolute value equation.
+algebra,4aadd741-d5eb-49c5-92ad-20925e064543,cluster,CL.0024,agreed,Calculates the slope as part of finding the unknown constant.
+algebra,4aadd741-d5eb-49c5-92ad-20925e064543,cluster,CL.0094,adjudicated,Summary: substitutes a point into the line equation and simplifies to get the unknown constant.
+algebra,4aadd741-d5eb-49c5-92ad-20925e064543,sub_skill,LE2.4,agreed,Summary: finds an unknown constant in a line by calculating slope and substituting a point.
+algebra,4ad805b2-26d7-4ce2-9012-c11946678700,cluster,CL.0218,agreed,Uses Desmos linear regression on the table.
+algebra,4ad805b2-26d7-4ce2-9012-c11946678700,sub_skill,LF.3,agreed,Summary: finds a linear function from a table of values.
+algebra,4c405ddf-0588-4913-9930-2075414afc8e,cluster,CL.0217,agreed,Graphs the inequality in Desmos and tests the points.
+algebra,4c405ddf-0588-4913-9930-2075414afc8e,sub_skill,LI.4,agreed,Summary: graphs the inequality and tests table points.
+algebra,4e91d195-5980-4eb8-9503-83f83c4ce798,cluster,CL.0104,adjudicated,"Summary: translates ""predicted greater than actual"" into an inequality."
+algebra,4e91d195-5980-4eb8-9503-83f83c4ce798,sub_skill,TVD.12,agreed,Summary: counts points below the line of best fit for predicted > actual.
+algebra,4e91d195-5980-4eb8-9503-83f83c4ce798,sub_skill,TVD.2,adjudicated,"Summary: compares points to the line of best fit, counting those where the predicted value is greater than actual (below the line)."
+algebra,51f6ce14-a21d-4cf1-8900-dc3ba559d7e2,cluster,CL.0047,agreed,Isolates the variable in the inequality.
+algebra,51f6ce14-a21d-4cf1-8900-dc3ba559d7e2,sub_skill,LI.2,agreed,"Solves a one-variable linear inequality by isolating x, flipping the sign when dividing by a negative."
+algebra,53d81be9-fa8a-4ee3-96f7-faee09191d5a,cluster,CL.0017,agreed,Combines n + (n+1) + (n+2) style terms.
+algebra,53d81be9-fa8a-4ee3-96f7-faee09191d5a,cluster,CL.0104,agreed,Writes the consecutive-integer sum as a linear equation.
+algebra,53d81be9-fa8a-4ee3-96f7-faee09191d5a,sub_skill,LE1.4,agreed,Summary: three consecutive integers sum to 84; finds a numeric answer from one linear equation.
+algebra,53d96e40-d46d-4d6c-8ef8-2d84bf930621,cluster,CL.0024,agreed,Gets the slope from the two function values.
+algebra,53d96e40-d46d-4d6c-8ef8-2d84bf930621,cluster,CL.0128,agreed,"Writes the equation, including the y-intercept."
+algebra,53d96e40-d46d-4d6c-8ef8-2d84bf930621,sub_skill,LF.3,agreed,Summary: finds a linear function from two function values.
+algebra,5451e99b-4089-4302-9b1d-d250c5765694,cluster,CL.0116,agreed,Explains the opposite (negative) reciprocal rule.
+algebra,5451e99b-4089-4302-9b1d-d250c5765694,sub_skill,LE2.5,agreed,"Summary: perpendicular slopes via the opposite reciprocal rule, with examples."
+algebra,5801739b-ef02-491f-b3b4-239132f014ac,cluster,CL.0128,agreed,Writes y = mx + b from slope and a point.
+algebra,5801739b-ef02-491f-b3b4-239132f014ac,sub_skill,LE2.4,agreed,Summary: finds a line's equation from its slope and a point.
+algebra,59e63dfd-0be0-4ecd-9e2d-f8cb4521f3db,cluster,CL.0216,agreed,Evaluates functions in Desmos.
+algebra,59e63dfd-0be0-4ecd-9e2d-f8cb4521f3db,cluster,CL.0220,agreed,Solves a one-variable equation by graphing.
+algebra,59e63dfd-0be0-4ecd-9e2d-f8cb4521f3db,sub_skill,LE1.1,agreed,Summary: solves single-variable equations in Desmos.
+algebra,5cf0dc86-d2f3-4802-b8b3-537008c228c0,cluster,CL.0225,agreed,Uses Desmos intersection to solve the system.
+algebra,5cf0dc86-d2f3-4802-b8b3-537008c228c0,sub_skill,SYS.2,agreed,Summary: finds x + y for a linear system.
+algebra,62feeae9-2cd2-4b5e-8bc7-0c31e4f75ef6,cluster,CL.0226,agreed,Defines the translated function in Desmos to check it.
+algebra,62feeae9-2cd2-4b5e-8bc7-0c31e4f75ef6,sub_skill,LE2.5,adjudicated,Summary: uses Desmos to visualize and verify translations (vertical shifts) of a linear function.
+algebra,62feeae9-2cd2-4b5e-8bc7-0c31e4f75ef6,sub_skill,LF.5,adjudicated,Summary: graphs translated linear functions y = f(x) + k in Desmos to verify the shift.
+algebra,64432b35-6e09-4e31-af90-dd5d87707bee,cluster,CL.0095,agreed,Solves by substitution.
+algebra,64432b35-6e09-4e31-af90-dd5d87707bee,sub_skill,SYS.2,agreed,Summary: solves a system by substitution to find the value of an expression.
+algebra,64f24b7b-19c9-44e7-8262-e907a3e06c69,cluster,CL.0230,agreed,Graphs the function in Desmos and clicks the x-axis point.
+algebra,64f24b7b-19c9-44e7-8262-e907a3e06c69,sub_skill,LF.5,agreed,Summary: finds the x-intercept of a linear function.
+algebra,6f53f9fb-cd07-4fb6-92a5-faa057092ade,cluster,CL.0095,agreed,Uses substitution.
+algebra,6f53f9fb-cd07-4fb6-92a5-faa057092ade,cluster,CL.0104,adjudicated,Summary: systems word problem solved step by step; the context is first written as two equations.
+algebra,6f53f9fb-cd07-4fb6-92a5-faa057092ade,sub_skill,SYS.4,agreed,Summary: solves a systems word problem algebraically.
+algebra,7377d1e0-ba2d-4542-997d-448ff6ef603b,cluster,CL.0104,agreed,Translates the stated relationship into a linear equation.
+algebra,7377d1e0-ba2d-4542-997d-448ff6ef603b,sub_skill,LE1.4,agreed,Summary: finds the fourth of four consecutive even integers from a stated relationship.
+algebra,73cabb90-3e7c-4216-9ae4-3fdaa8fa768b,sub_skill,LE2.4,agreed,Examples applying the standard-form slope formula to find slopes of lines.
+algebra,7457e53e-73d3-4b43-9970-57531103b9a1,cluster,CL.0217,agreed,Graphs the system in Desmos and checks the shaded overlap.
+algebra,7457e53e-73d3-4b43-9970-57531103b9a1,sub_skill,LI.4,agreed,Summary: identifies which point solves a system of inequalities.
+algebra,7bf11662-8d6a-4c64-a355-faeb6eed9e2d,cluster,CL.0017,agreed,Simplifies both sides before comparing.
+algebra,7bf11662-8d6a-4c64-a355-faeb6eed9e2d,cluster,CL.0133,agreed,Compares simplified sides to decide how many solutions.
+algebra,7bf11662-8d6a-4c64-a355-faeb6eed9e2d,sub_skill,LE1.5,agreed,Summary: determines the number of solutions of a linear equation by simplifying both sides.
+algebra,811834ce-27be-4610-b5ed-286970e63ca4,cluster,CL.0228,agreed,Uses sliders in Desmos to find the constant.
+algebra,811834ce-27be-4610-b5ed-286970e63ca4,sub_skill,NLE.4,adjudicated,"Summary: finds the value of a constant that yields exactly one solution, using sliders in Desmos."
+algebra,829df1fa-e401-477c-a025-4f0270fb9add,cluster,CL.0014,adjudicated,"Summary: plugs in easy x-values to identify the correct exponential graph, ruling choices in or out."
+algebra,829df1fa-e401-477c-a025-4f0270fb9add,cluster,CL.0094,agreed,Evaluates the exponential at chosen x-values.
+algebra,829df1fa-e401-477c-a025-4f0270fb9add,sub_skill,NLF.1,agreed,Matches an exponential equation to its graph by plugging in easy x-values.
+algebra,832c1e44-ef29-4a48-9e85-1cba65cfca52,cluster,CL.0017,agreed,Simplifies the expression.
+algebra,832c1e44-ef29-4a48-9e85-1cba65cfca52,cluster,CL.0104,agreed,Translates the word problem into an expression.
+algebra,832c1e44-ef29-4a48-9e85-1cba65cfca52,sub_skill,LE1.3,agreed,Summary: translates a word problem into a simplified linear expression.
+algebra,857f6aee-5bf0-46ed-8278-2452afb29b9f,cluster,CL.0220,agreed,Graphs both sides and finds their intersection.
+algebra,857f6aee-5bf0-46ed-8278-2452afb29b9f,sub_skill,NLE.3,agreed,Summary: solves a rational equation.
+algebra,86dc3603-bb54-4e61-be28-4903241d300e,cluster,CL.0219,agreed,Clicks the vertex of the graphed quadratic.
+algebra,86dc3603-bb54-4e61-be28-4903241d300e,sub_skill,NLF.4,agreed,Summary: finds the min or max of a quadratic.
+algebra,8d06cc71-6e57-460a-bae8-8ca3c275d58a,cluster,CL.0217,agreed,Plots the pairs on the shaded Desmos graph.
+algebra,8d06cc71-6e57-460a-bae8-8ca3c275d58a,sub_skill,LI.4,agreed,Summary: tests which ordered pairs satisfy an inequality.
+algebra,90c7a963-06ce-4741-b3c1-b1ce73d97ca2,sub_skill,TVD.12,agreed,Summary: counts points above the line of best fit to decide actual > predicted.
+algebra,90c7a963-06ce-4741-b3c1-b1ce73d97ca2,sub_skill,TVD.2,adjudicated,"Summary: compares actual values with those predicted by the line of best fit, counting points above the line."
+algebra,9118617f-7b15-49db-8c7e-ab6a373bf310,cluster,CL.0087,agreed,Explains shifting a graph by adjusting its equation.
+algebra,9118617f-7b15-49db-8c7e-ab6a373bf310,sub_skill,LE2.5,adjudicated,Summary: explains vertical and horizontal shifts (translations) of linear graphs.
+algebra,9118617f-7b15-49db-8c7e-ab6a373bf310,sub_skill,LF.5,adjudicated,Summary: overview of linear graph questions and the graph of a shifted function y = f(x) + k.
+algebra,915c76b5-aa44-4e15-87c5-7b4a52225e1d,cluster,CL.0176,agreed,Discusses shaded regions of inequalities.
+algebra,915c76b5-aa44-4e15-87c5-7b4a52225e1d,cluster,CL.0177,agreed,Solutions of a graphed system are the intersection.
+algebra,915c76b5-aa44-4e15-87c5-7b4a52225e1d,sub_skill,LI.5,agreed,Overview covers graphed inequalities and shaded regions.
+algebra,915c76b5-aa44-4e15-87c5-7b4a52225e1d,sub_skill,SYS.5,agreed,Overview of graphing linear systems and finding their solutions.
+algebra,91b8d3cf-f9ee-486a-a467-bbf07f923e74,cluster,CL.0024,agreed,Explains the slope formula.
+algebra,91b8d3cf-f9ee-486a-a467-bbf07f923e74,cluster,CL.0160,agreed,"Explains slope-intercept form, reading slope and intercept."
+algebra,91b8d3cf-f9ee-486a-a467-bbf07f923e74,sub_skill,LE2.4,agreed,Intro explains slope-intercept form and the slope formula for a line.
+algebra,925e80d5-ed51-4930-9c6c-cdf7333a22bb,cluster,CL.0230,agreed,Summary: finds intercepts by clicking on the axes in Desmos.
+algebra,925e80d5-ed51-4930-9c6c-cdf7333a22bb,sub_skill,LF.5,adjudicated,Summary: finds the x- or y-intercept of a function by clicking the axes in Desmos; production evidence: x-intercept of a linear function.
+algebra,94bbffc9-a12c-4173-96c2-841b7700703f,cluster,CL.0078,agreed,The model uses a scaled exponent for the time period.
+algebra,94bbffc9-a12c-4173-96c2-841b7700703f,cluster,CL.0127,agreed,Builds an exponential growth model from the given growth.
+algebra,94bbffc9-a12c-4173-96c2-841b7700703f,sub_skill,NLF.3,agreed,Summary: builds an exponential growth model with a scaled exponent.
+algebra,97693338-2f48-419d-bb46-12284619b7bc,cluster,CL.0221,agreed,Uses a Desmos slider on parameterized points to test the system.
+algebra,97693338-2f48-419d-bb46-12284619b7bc,sub_skill,SYS.3,agreed,Summary: solves a system with parameterized points (points on both lines) using a slider.
+algebra,98f9b7ee-0963-40e7-96b0-3aef3a2644a7,cluster,CL.0224,agreed,Uses Desmos list statistics.
+algebra,98f9b7ee-0963-40e7-96b0-3aef3a2644a7,sub_skill,OVD.2,agreed,Summary: computes mean and median of a list.
+algebra,9be07bbd-535d-42ce-b4f3-590a9d7e8163,cluster,CL.0104,agreed,Writes the words as a linear inequality.
+algebra,9be07bbd-535d-42ce-b4f3-590a9d7e8163,sub_skill,LI.1,agreed,Summary: translates a consecutive odd integers word problem into a linear inequality.
+algebra,a0b5a76d-d04e-4e7c-b7ef-fde460a2457f,cluster,CL.0116,agreed,Explains negative-reciprocal perpendicular slopes.
+algebra,a0b5a76d-d04e-4e7c-b7ef-fde460a2457f,cluster,CL.0172,agreed,Explains parallel lines have equal slopes.
+algebra,a0b5a76d-d04e-4e7c-b7ef-fde460a2457f,sub_skill,LE2.5,agreed,Summary: perpendicular slopes as negative reciprocals and parallel slopes as equal.
+algebra,a2ca4fcc-b393-4f80-861e-ef3fe3c3c9e9,cluster,CL.0214,agreed,Renames the variable to x before typing it in.
+algebra,a2ca4fcc-b393-4f80-861e-ef3fe3c3c9e9,cluster,CL.0220,agreed,Types the equation directly to read solutions.
+algebra,a2ca4fcc-b393-4f80-861e-ef3fe3c3c9e9,sub_skill,NLE.2,agreed,Summary: solves quadratic equations in Desmos.
+algebra,a3f15554-464a-4a13-a90b-be55c6ac8baa,cluster,CL.0115,agreed,Summary: uses the midpoint formula for two points.
+algebra,b021eb85-74a8-4c82-b2d1-0c750b6bfc84,cluster,CL.0220,agreed,Graphs both sides of the linear equation in Desmos to see the solutions.
+algebra,b021eb85-74a8-4c82-b2d1-0c750b6bfc84,sub_skill,LE1.5,agreed,Summary: determines the number of solutions of a linear equation.
+algebra,b12b9f67-54cd-48e0-a786-2b2ed12fa061,cluster,CL.0225,agreed,Graphs each choice system in Desmos.
+algebra,b12b9f67-54cd-48e0-a786-2b2ed12fa061,sub_skill,SYS.5,agreed,Summary: graphs systems from the choices in Desmos to match the given graph.
+algebra,b3ae538d-a750-4d47-b318-0b028258be32,cluster,CL.0080,agreed,Converts standard form to slope-intercept form.
+algebra,b3ae538d-a750-4d47-b318-0b028258be32,cluster,CL.0160,agreed,Reads slope and intercept from y = mx + b.
+algebra,b3ae538d-a750-4d47-b318-0b028258be32,sub_skill,LE2.4,agreed,Summary: finds slope and y-intercept of a standard-form line by converting to slope-intercept form.
+algebra,b5dfbc9f-922c-4da1-8ad4-2eccdbc75ff8,cluster,CL.0213,agreed,Converts the decimal result to a fraction.
+algebra,b5dfbc9f-922c-4da1-8ad4-2eccdbc75ff8,cluster,CL.0216,agreed,Evaluates the nested functions in Desmos.
+algebra,b5dfbc9f-922c-4da1-8ad4-2eccdbc75ff8,sub_skill,NLF.1,adjudicated,Summary: evaluates nested functions (function values) in Desmos.
+algebra,b9243e41-7fc4-4f98-b4f8-460aa5b737d2,cluster,CL.0113,agreed,Summary: uses the distance formula between two points.
+algebra,baea531e-f6e8-47fa-82a8-102960e60cdb,cluster,CL.0177,agreed,Counts intersection points.
+algebra,baea531e-f6e8-47fa-82a8-102960e60cdb,cluster,CL.0225,agreed,Graphs the system in Desmos.
+algebra,baea531e-f6e8-47fa-82a8-102960e60cdb,sub_skill,NLE.4,adjudicated,Summary: determines the number of solutions to a system by counting intersection points; production (transcript) evidence: how-many-solutions system.
+algebra,bb533978-26b1-4046-b0d2-84f083b1e4e1,cluster,CL.0217,agreed,Graphs the inequality and tests the points.
+algebra,bb533978-26b1-4046-b0d2-84f083b1e4e1,sub_skill,LI.4,agreed,Summary: tests which points satisfy a linear inequality.
+algebra,c5d9b81a-2cd0-4d6d-906c-4453ab62ee47,cluster,CL.0219,agreed,Clicks the vertex in Desmos.
+algebra,c5d9b81a-2cd0-4d6d-906c-4453ab62ee47,sub_skill,NLF.4,agreed,Summary: finds the min or max of a quadratic.
+algebra,c7860bf1-e6ad-4168-944b-ae6b398637a4,cluster,CL.0218,agreed,Uses Desmos regression to fit models.
+algebra,c7860bf1-e6ad-4168-944b-ae6b398637a4,sub_skill,TVD.14,agreed,Summary: fits exponential and quadratic models to data with regressions.
+algebra,c78d7f32-68b1-4310-8d91-b716b907e850,cluster,CL.0060,agreed,Profit computed from a per-shirt amount times the quantity.
+algebra,c78d7f32-68b1-4310-8d91-b716b907e850,cluster,CL.0104,agreed,Turns the profit situation into an equation.
+algebra,c78d7f32-68b1-4310-8d91-b716b907e850,sub_skill,LF.2,adjudicated,"Summary: T-shirt profit problem with a per-shirt rate stated in words, modeled as a linear equation by the student."
+algebra,c88fe6c5-e368-43cc-b980-d63d1c452051,cluster,CL.0216,agreed,Checks the model's values at key points in Desmos.
+algebra,c88fe6c5-e368-43cc-b980-d63d1c452051,sub_skill,NLF.3,agreed,Graphs the exponential model in Desmos to sanity check it.
+algebra,c8bb357c-7347-4c1a-9927-6d24c37d5aa2,cluster,CL.0104,agreed,Sets up equations from the word problem.
+algebra,c8bb357c-7347-4c1a-9927-6d24c37d5aa2,sub_skill,SYS.4,agreed,Summary: identifying and setting up systems of linear equations word problems.
+algebra,cb89266a-fd02-4a37-883a-22f529f1e21d,cluster,CL.0225,agreed,Graphs the system and finds the intersection.
+algebra,cb89266a-fd02-4a37-883a-22f529f1e21d,sub_skill,SYS.1,agreed,Summary: solves systems of linear equations in Desmos.
+algebra,cc4f1dee-da8a-450a-b342-13a2cb96d6d1,cluster,CL.0220,agreed,Graphs both sides and finds their intersection.
+algebra,cc4f1dee-da8a-450a-b342-13a2cb96d6d1,sub_skill,NLE.3,agreed,Summary: solves rational equations.
+algebra,cd0884b2-52ef-44b9-babb-a9036697997d,sub_skill,LE2.4,agreed,Overview of point-slope form of a line with a graph example.
+algebra,d1305c80-f31c-4714-bcbd-7ea25768fcf9,cluster,CL.0104,adjudicated,Summary: rewrites the stated predicted/actual comparison as an inequality with actual on the left.
+algebra,d1305c80-f31c-4714-bcbd-7ea25768fcf9,sub_skill,TVD.12,agreed,Handles actual-vs-predicted questions about points relative to the line of best fit.
+algebra,d1708315-b175-4768-a368-715da2854077,cluster,CL.0072,agreed,Reads the y-intercept off the Desmos graph.
+algebra,d1708315-b175-4768-a368-715da2854077,sub_skill,NLF.1,agreed,Summary: finds the y-intercept of an exponential function.
+algebra,d6126930-c0b0-47f9-ab4c-0b82c403c6b2,cluster,CL.0104,agreed,Translates the word problem into inequalities.
+algebra,d6126930-c0b0-47f9-ab4c-0b82c403c6b2,cluster,CL.0201,adjudicated,"Summary: translates the word conditions into a system of inequalities; ""at least"" / ""at most"" mapped to >= / <=."
+algebra,d6126930-c0b0-47f9-ab4c-0b82c403c6b2,sub_skill,LI.1,agreed,Summary: translates a word problem into a system of linear inequalities.
+algebra,d91a4f1a-889f-47d0-8dac-33a6eece68ce,cluster,CL.0213,agreed,Converts the decimal solution to a fraction.
+algebra,d91a4f1a-889f-47d0-8dac-33a6eece68ce,cluster,CL.0220,agreed,Solves the equation by graphing in Desmos.
+algebra,d91a4f1a-889f-47d0-8dac-33a6eece68ce,sub_skill,NLE.2,agreed,Summary: solves a quadratic equation.
+algebra,dacd96ec-064b-46fd-98c8-b33d93883d81,cluster,CL.0132,agreed,Contrasts linear and exponential growth.
+algebra,dacd96ec-064b-46fd-98c8-b33d93883d81,sub_skill,NLF.3,adjudicated,Summary: overview of exponential growth structure with a general exponential growth formula.
+algebra,dacd96ec-064b-46fd-98c8-b33d93883d81,sub_skill,TVD.5,adjudicated,"Summary: overview of the differences between linear and exponential growth, including their graphs."
+algebra,ddcf4132-d274-4ff7-ab7b-f3e69ca92c43,cluster,CL.0225,agreed,Graphs both equations in Desmos and clicks the intersection.
+algebra,ddcf4132-d274-4ff7-ab7b-f3e69ca92c43,sub_skill,NLE.5,agreed,Summary: solves a quadratic-and-linear system.
+algebra,de6bd47d-3156-4f6b-85fd-3ee0b939675d,cluster,CL.0027,adjudicated,Summary: compares the range of two data sets shown in histograms (max minus min).
+algebra,de6bd47d-3156-4f6b-85fd-3ee0b939675d,cluster,CL.0134,agreed,Judges standard deviation from the histogram shapes.
+algebra,de6bd47d-3156-4f6b-85fd-3ee0b939675d,sub_skill,OVD.13,agreed,Summary: compares standard deviation of two data sets shown as histograms.
+algebra,de6bd47d-3156-4f6b-85fd-3ee0b939675d,sub_skill,OVD.3,agreed,Summary: compares the range and standard deviation of two data sets.
+algebra,e485c306-1369-4c49-911a-04b14df538df,cluster,CL.0228,agreed,Tests choices with a Desmos slider.
+algebra,e485c306-1369-4c49-911a-04b14df538df,sub_skill,NLE.4,agreed,Summary: finds a constant giving one solution.
+algebra,e485c306-1369-4c49-911a-04b14df538df,sub_skill,NLE.5,agreed,Summary: the system is linear-quadratic.
+algebra,e4c5c3ee-c7ac-4d88-8666-451e8bd3c182,cluster,CL.0225,agreed,Finds the intersection point in Desmos.
+algebra,e4c5c3ee-c7ac-4d88-8666-451e8bd3c182,sub_skill,SYS.1,agreed,Summary: solves a linear system by finding its intersection.
+algebra,e67c5321-22a9-4f63-82d2-fedb259ff7b4,cluster,CL.0087,agreed,Applies a vertical shift to the function's equation.
+algebra,e67c5321-22a9-4f63-82d2-fedb259ff7b4,cluster,CL.0160,agreed,Uses the slope and y-intercept of the line.
+algebra,e67c5321-22a9-4f63-82d2-fedb259ff7b4,sub_skill,LE2.5,agreed,Gets the translated line's equation from the original via a vertical shift.
+algebra,e67c5321-22a9-4f63-82d2-fedb259ff7b4,sub_skill,LF.5,adjudicated,Summary: works a vertical translation y = g(x) + k of a linear function with its slope and y-intercept.
+algebra,e6d66a01-c5fc-47ce-ab3b-efbbf5db270f,cluster,CL.0217,agreed,Graphs the system of inequalities in Desmos.
+algebra,e6d66a01-c5fc-47ce-ab3b-efbbf5db270f,cluster,CL.0225,adjudicated,Summary: graphs the system of inequalities in Desmos and finds the intersection point of the boundary lines.
+algebra,e6d66a01-c5fc-47ce-ab3b-efbbf5db270f,sub_skill,LI.1,agreed,Graphs the system of inequalities from the word problem in Desmos.
+algebra,e86c4982-441f-4f37-bc46-6a50ce0f44e0,cluster,CL.0172,agreed,"The lines are parallel, so they never intersect."
+algebra,e86c4982-441f-4f37-bc46-6a50ce0f44e0,cluster,CL.0225,agreed,Uses Desmos to graph the system; parallel lines mean no intersection.
+algebra,e86c4982-441f-4f37-bc46-6a50ce0f44e0,sub_skill,SYS.3,agreed,Summary: finds the number of intersection points of two parallel lines.
+algebra,eb0ec6f1-0d4c-4293-a37b-5ef631f0a0af,cluster,CL.0215,agreed,Summary: finds equivalent quadratics by overlapping graphs.
+algebra,eb0ec6f1-0d4c-4293-a37b-5ef631f0a0af,sub_skill,EE.3,adjudicated,Summary: identifies the equivalent quadratic expression by overlapping graphs; production evidence: choices are factored forms (EE.3 target is a product).
+algebra,ec9b9fbd-368e-48d3-bcce-db1d6bc2fc47,cluster,CL.0024,agreed,Computes slopes of sides on the coordinate plane.
+algebra,ec9b9fbd-368e-48d3-bcce-db1d6bc2fc47,cluster,CL.0116,agreed,Uses negative-reciprocal slopes to identify perpendicular sides.
+algebra,ec9b9fbd-368e-48d3-bcce-db1d6bc2fc47,sub_skill,LE2.5,agreed,Uses slopes on a coordinate plane to identify perpendicular lines.
+algebra,ecdfd76f-bbdb-4710-8972-abc11f6f6ab0,cluster,CL.0128,agreed,Outlines the steps to write y = mx + b.
+algebra,ecdfd76f-bbdb-4710-8972-abc11f6f6ab0,sub_skill,LE2.4,agreed,Summary: steps to find the equation of a line in slope-intercept form.
+algebra,ef8262f7-afd1-4e90-9563-b4832361b47e,cluster,CL.0156,agreed,Matches the equations to the graph via intercepts and slopes.
+algebra,ef8262f7-afd1-4e90-9563-b4832361b47e,cluster,CL.0160,agreed,Uses slopes and intercepts of the lines.
+algebra,ef8262f7-afd1-4e90-9563-b4832361b47e,sub_skill,SYS.5,agreed,Summary: identifies the system that matches a given graph.
+algebra,f7dd35e5-928d-4153-8e84-89125ddc3893,cluster,CL.0084,agreed,Sets x = 0 to get the y-intercept.
+algebra,f7dd35e5-928d-4153-8e84-89125ddc3893,sub_skill,LE2.4,agreed,Summary: finds slope by formula and y-intercept by substituting zero for x.
+algebra,fba2f3a7-9ff0-4805-ae16-e3ff3ed9db0b,cluster,CL.0225,agreed,Graphs and finds the intersection.
+algebra,fba2f3a7-9ff0-4805-ae16-e3ff3ed9db0b,sub_skill,SYS.4,agreed,Summary: solves a systems word problem in Desmos.
+algebra,fd3d693c-5422-41da-b21b-d2ab7bba1eec,cluster,CL.0221,agreed,Uses a Desmos slider to see which parameterized point stays off the line.
+algebra,fd3d693c-5422-41da-b21b-d2ab7bba1eec,sub_skill,LE2.4,agreed,Finds which parameterized point never lies on a given line.
+algebra,fed6fefe-8c2b-4337-9e1a-e332ac1366e6,cluster,CL.0024,agreed,Uses the slope formula with two points.
+algebra,fed6fefe-8c2b-4337-9e1a-e332ac1366e6,sub_skill,LE2.4,adjudicated,Summary: calculates the slope of a line through two given points with the slope formula.
+algebra,fed6fefe-8c2b-4337-9e1a-e332ac1366e6,sub_skill,LF.3,adjudicated,Summary: finds the slope (a constant of the linear function) from two coordinate pairs; video coded Linear Functions.
+craft-structure,00192fcf-b6ab-49fd-b10c-dead70e06c2d,sub_skill,TSP.3,agreed,Summary: function of an underlined portion question in an informational text about Denisovans.
+craft-structure,00cc34d6-bdee-4213-9bfd-877c53c8317c,cluster,CL.0097,agreed,Summary: practices the short-summary technique before naming the purpose.
+craft-structure,00cc34d6-bdee-4213-9bfd-877c53c8317c,sub_skill,TSP.1,agreed,Summary: summary technique applied to an informational passage on bombardier beetles to identify its main purpose.
+craft-structure,0681851c-3559-47fe-abb0-1feb1e167d83,sub_skill,COE.2,agreed,"Summary: use graph data to support a claim about homeostatic regulation of REM sleep in seals (despite the Words in Context label, this is a data-as-evidence item)."
+craft-structure,080dd637-dfbd-406d-bdff-729d624ecc96,cluster,CL.0064,agreed,Summary: predicting the meaning before choosing.
+craft-structure,080dd637-dfbd-406d-bdff-729d624ecc96,cluster,CL.0143,agreed,Summary: identifying a contrast drives the answer.
+craft-structure,080dd637-dfbd-406d-bdff-729d624ecc96,sub_skill,WIC.2,agreed,Summary: Words in Context question solved by identifying a contrast and predicting the opposite meaning.
+craft-structure,0d7bd132-1200-48cf-9c2d-3171ab546e83,sub_skill,CTC.1,adjudicated,Summary: cross-text question on Moore's common-sense philosophy vs external-world skepticism; production evidence: how the Text 1 author would rebut the skeptics in Text 2.
+craft-structure,0ffb1b0a-98cf-467b-af81-8f6136578088,sub_skill,TSP.2,agreed,Summary: solving an overall structure of the text question about large-scale engineering projects.
+craft-structure,1115e0c6-12c3-4338-aa79-767543672078,sub_skill,COE.3,adjudicated,Summary: Command of Evidence question about supporting a musicologist's claim; no graph mentioned; production evidence: find a hypothetical finding that supports the claim.
+craft-structure,161174f4-fa4d-424e-8398-637fedf1cac0,sub_skill,CTC.5,agreed,Summary: question about the relationship between two texts discussing sermons in Morrison's and Ellison's novels.
+craft-structure,1bfa5df9-8a72-4143-b7c2-ca5b61665739,sub_skill,CTC.1,adjudicated,"Title 'Paired Passages, Pt. 1: Response Questions'; worked response question on photography as fine art; production evidence: Text 2 author rebuts Text 1's overall argument."
+craft-structure,2e9d4962-65b4-4bae-ae39-9573531c07e0,sub_skill,COE.4,agreed,Summary: find a literary quotation that illustrates a character's comfort in understanding nature (despite the Words in Context label).
+craft-structure,31af867d-1710-49c7-8fdf-411d3f317d78,cluster,CL.0187,adjudicated,"Summary: analysis focuses on word meanings like 'respect'; production evidence says 'with respect to' means 'in relation to', not high esteem, i.e. a familiar word in a less common sense."
+craft-structure,31af867d-1710-49c7-8fdf-411d3f317d78,sub_skill,TSP.3,adjudicated,Title 'Underline Function 2' and summary: function of an underlined sentence; production evidence places it in an informational text.
+craft-structure,689c0c40-6be5-4808-8888-09972329aac7,sub_skill,TSP.3,agreed,Title 'Function of the Underlined Sentence'; worked example on the function of a sentence in an informational climate-model text.
+craft-structure,6a842bc3-42a1-46d2-966e-8ba3c585b8d3,cluster,CL.0049,agreed,"Summary: breaks the text down into a critique and a solution, labelling each part's role."
+craft-structure,6a842bc3-42a1-46d2-966e-8ba3c585b8d3,sub_skill,TSP.2,agreed,Summary: practice identifying the overall structure of a text.
+craft-structure,6dc4768d-b9f0-4eaf-a869-744905288ed3,sub_skill,TSP.2,agreed,Summary: solving an overall structure of the text question about Claude Shannon.
+craft-structure,7c18ee0e-ad71-40bc-8506-fc1e13692a7d,cluster,CL.0044,agreed,Summary: finds the common ground both authors accept.
+craft-structure,7c18ee0e-ad71-40bc-8506-fc1e13692a7d,sub_skill,CTC.4,agreed,Summary: paired passage agreement question solved by finding the common ground of social belonging shared by both authors.
+craft-structure,80193464-342d-492a-98b4-b42675721915,cluster,CL.0045,agreed,Summary: generalizing a list of examples to find the blank's meaning.
+craft-structure,80193464-342d-492a-98b4-b42675721915,cluster,CL.0142,agreed,Summary: the colon introduces the material that restates the blank.
+craft-structure,80193464-342d-492a-98b4-b42675721915,sub_skill,WIC.1,agreed,"Summary: Words in Context question solved via a colon followed by a list of examples, which the blank generalizes."
+craft-structure,803f88fd-143a-4ec9-86ae-50e3343a9ae0,cluster,CL.0142,agreed,Summary: the clue restates the blank's meaning.
+craft-structure,803f88fd-143a-4ec9-86ae-50e3343a9ae0,cluster,CL.0199,agreed,"Summary: uses the pronoun 'this' as the clue, tracing it to what it refers to."
+craft-structure,803f88fd-143a-4ec9-86ae-50e3343a9ae0,sub_skill,WIC.1,agreed,Summary: Words in Context question solved by using the pronoun 'this' as a clue for restatement.
+craft-structure,866c41e4-d514-4d15-bc8c-579697ea5543,cluster,CL.0049,agreed,"Summary: identifies the text's two main parts to describe its structure, i.e. labelling what each part does."
+craft-structure,866c41e4-d514-4d15-bc8c-579697ea5543,sub_skill,TSP.2,agreed,Title 'Overall Structure ... From ___ to ___'; summary: analyze the overall structure of an informational text.
+craft-structure,aff633f5-e2f3-49bb-8b0d-b8ef79a17021,sub_skill,TSP.2,agreed,Summary: solving an overall structure of the text question about lost films.
+craft-structure,c145f7af-ecc7-45b8-8656-f851b9d3874a,sub_skill,TSP.4,agreed,Summary: function of an underlined sentence question in a literary text.
+craft-structure,cb76a61a-f4cd-485c-a4a5-a1194984aba6,sub_skill,CTC.1,adjudicated,"Title 'Paired Passages, Pt. 1: Response Questions'; response question on plant coexistence; production evidence: Mendes's team rebuts the conventional thinking in Text 1."
+craft-structure,ccf9798b-9bbc-48db-a548-18ae5fbca700,cluster,CL.0015,agreed,Summary: classifies the relationship between the two researchers' views as a disagreement.
+craft-structure,ccf9798b-9bbc-48db-a548-18ae5fbca700,sub_skill,CTC.1,agreed,Summary: paired passage response question solved by identifying a disagreement in methodology and timeline between two groups of researchers.
+craft-structure,d3745973-a3cc-49f3-9471-bfba1f2ce260,cluster,CL.0015,agreed,Summary: classifies one author's view as qualifying the other's.
+craft-structure,d3745973-a3cc-49f3-9471-bfba1f2ce260,sub_skill,CTC.2,agreed,Summary: response question solved by identifying how one author qualifies another's multi-part interpretation.
+craft-structure,d89a796c-3163-421e-b3a2-65f05d804397,cluster,CL.0097,agreed,"Title/summary: the 3-5 word summary technique, summing up the text before judging purpose."
+craft-structure,d89a796c-3163-421e-b3a2-65f05d804397,sub_skill,TSP.1,agreed,"Title and summary: main purpose questions for informational texts, illustrated with a noise-concentration study."
+craft-structure,ddb64039-544c-446b-8957-6a8b872c30a8,sub_skill,TSP.3,agreed,Worked example on the function of a sentence that introduces additional harmful effects of DDT in an informational text.
+craft-structure,dfad7cc9-4d3f-4e04-836f-b6812bc794e4,cluster,CL.0064,agreed,Summary: solve words-in-context questions by predicting a definition before choosing.
+craft-structure,dfad7cc9-4d3f-4e04-836f-b6812bc794e4,cluster,CL.0187,agreed,"Summary warns against choosing the most common definition, i.e. spotting a word used in a less common sense."
+craft-structure,dfad7cc9-4d3f-4e04-836f-b6812bc794e4,sub_skill,WIC.4,agreed,"Title 'Tricky Words' and summary: choose a word's meaning by prediction rather than its most common definition, i.e. a common word used in one of its several senses."
+craft-structure,eb18da03-0755-4e13-9039-5d41e0e305bf,sub_skill,TSP.3,agreed,Summary: underlined function question; the underlined portion explains a mechanism of gene transfer in an informational text.
+craft-structure,ef3956c7-6d00-4529-94dc-725918f0db77,sub_skill,TSP.4,agreed,Summary: function of an underlined sentence question in a literary text.
+expression-ideas,01245da6-c0a4-48af-a9ea-ee5c646e0066,cluster,CL.0151,agreed,"Summary: selects the choice that fits the audience's familiarity level, which is judging what the audience already knows."
+expression-ideas,01245da6-c0a4-48af-a9ea-ee5c646e0066,sub_skill,RS.2,agreed,Summary: solves a Rhetorical Synthesis question by identifying the target audience and choosing the option fitting their familiarity level.
+expression-ideas,1a07df57-a33d-438f-8b82-9f1162c71418,cluster,CL.0010,agreed,"Summary: shows how to use the student notes to resolve multiple answer choices that match the goal, i.e. checking each choice against the notes."
+expression-ideas,1a07df57-a33d-438f-8b82-9f1162c71418,sub_skill,RS.5,adjudicated,"Summary: uses the student notes to settle multiple choices matching the goal; the goal (per the existing production evidence) is one feature of one subject, the frog's classification category."
+expression-ideas,1b270aef-9a79-4278-bd2d-028eb17f251d,sub_skill,RS.5,agreed,Summary: medium question about an archive's digital advantage; goal names one subject and one feature (an advantage).
+expression-ideas,336f2672-0b2e-4ec4-bd07-7bdf4c8c3346,cluster,CL.0188,agreed,"A similarity goal is answered by matching choices whose wording expresses similarity, the move this cluster defines."
+expression-ideas,336f2672-0b2e-4ec4-bd07-7bdf4c8c3346,sub_skill,RS.1,agreed,Summary: three-step rhetorical synthesis strategy applied to an easy similarity question (goal relates items by similarity).
+expression-ideas,4c08140b-9e2c-4bfd-9109-c259f58ac100,cluster,CL.0010,agreed,Summary: verifies choices against the bullet points to confirm accuracy.
+expression-ideas,4c08140b-9e2c-4bfd-9109-c259f58ac100,cluster,CL.0206,agreed,Summary: identifies the goal's 'how' requirement and holds choices to it.
+expression-ideas,4c08140b-9e2c-4bfd-9109-c259f58ac100,sub_skill,RS.5,adjudicated,Summary: solves an RS question by identifying the goal's 'how' requirement (how one subject produced one result) and checking choices against the bullets; no compare/audience/study/generalize test fires.
+expression-ideas,53e92546-489f-4085-b50b-8622bec9f2ad,sub_skill,RS.3,agreed,Summary: hard rhetorical synthesis question focused on presenting the primary aim of a research study.
+expression-ideas,58b3073d-eea6-481d-b3b0-01fae830b3ca,sub_skill,RS.3,agreed,Summary: worked Rhetorical Synthesis question focusing on presenting the primary aim of a study; the goal asks to report a study's aim.
+expression-ideas,660e3d61-a3fe-4a22-bb46-da9158411762,cluster,CL.0072,adjudicated,"Summary: hard Command of Evidence question solved step by step using a bar graph, which requires reading values off the graph."
+expression-ideas,660e3d61-a3fe-4a22-bb46-da9158411762,sub_skill,COE.2,adjudicated,"Summary: hard Command of Evidence question solved using a bar graph; picking graph data that supports the text's conclusion, with accurate-but-irrelevant data rejected."
+expression-ideas,79598358-da84-4fc6-8884-b38b8816269e,sub_skill,COE.3,adjudicated,"Summary: hard Command of Evidence question about supporting a historical claim, with no table or graph; choosing a source statement that supports a claim."
+expression-ideas,79bf9158-ba63-4064-b320-f367bf912c30,cluster,CL.0010,agreed,"Summary: after the goal check, verifies each choice's factual accuracy against the notes (title: 'Accuracy Matters')."
+expression-ideas,79bf9158-ba63-4064-b320-f367bf912c30,cluster,CL.0206,agreed,"Summary: checks choices for both positive and negative impacts, requiring every part the goal demands."
+expression-ideas,79bf9158-ba63-4064-b320-f367bf912c30,sub_skill,RS.5,adjudicated,"Summary: RS goal asks for both positive and negative impacts of one subject; checks choices for both, then factual accuracy. Residual RS.5: no RS.1-RS.4 test fires."
+expression-ideas,7ba8e45f-17cd-4911-a427-afcb77c55e6b,cluster,CL.0125,agreed,Weakening a hypothesis with graph data requires working out what result the hypothesis predicts and picking data showing the opposite.
+expression-ideas,7ba8e45f-17cd-4911-a427-afcb77c55e6b,sub_skill,COE.2,agreed,"Summary: hard Command of Evidence question using graph data to weaken a hypothesis, i.e. data used as evidence against a claim."
+expression-ideas,88aed73a-b526-4319-af10-bcd8d32b982c,sub_skill,TRN.3,agreed,Summary: medium transition question solved by identifying a similarity relationship between two examples.
+expression-ideas,9c77741b-4c7e-479f-8291-c37a456222c4,cluster,CL.0048,agreed,Summary: comma plus coordinating conjunction is a legal joiner for two independent clauses while comma plus conjunctive adverb is a splice.
+expression-ideas,9c77741b-4c7e-479f-8291-c37a456222c4,cluster,CL.0129,adjudicated,"Summary: clause boundary question explaining which joiners can link independent clauses, which requires confirming both sides are complete sentences."
+expression-ideas,9c77741b-4c7e-479f-8291-c37a456222c4,sub_skill,BND.1,agreed,Summary: clause boundary question explaining why a coordinating conjunction can join independent clauses with a comma but a conjunctive adverb cannot.
+expression-ideas,9edef906-20d5-4553-bb53-163712cf7cf0,cluster,CL.0129,agreed,Explaining that a subordinating conjunction makes a dependent clause is the subordinator test for whether a side is a complete sentence.
+expression-ideas,9edef906-20d5-4553-bb53-163712cf7cf0,sub_skill,BND.2,agreed,Summary: solves a grammar question involving a dependent clause and explains how subordinating conjunctions function.
+expression-ideas,9f246bf9-98c5-4cc6-8932-f0e4151fa85d,sub_skill,COE.3,adjudicated,"Summary: hard Command of Evidence question about Casarabe urbanism, with no graph; choosing the finding that would support the researchers' conclusion."
+expression-ideas,a566d29f-742f-4415-8c6e-4dd970d2da69,sub_skill,TRN.3,agreed,Summary: identifies a parallel or similar event across generations to choose 'similarly' (TRN.3 lexicon).
+expression-ideas,b0e5708d-4df9-4b73-9e1f-a54062bf24b5,cluster,CL.0195,agreed,Choosing 'specifically' from a general-to-specific relationship is telling a specification apart from an example or restatement.
+expression-ideas,b0e5708d-4df9-4b73-9e1f-a54062bf24b5,sub_skill,TRN.4,agreed,Summary: solves a transition question by identifying a general-to-specific relationship to choose 'specifically' (TRN.4 lexicon).
+expression-ideas,b30a638d-c440-4297-b920-81973f8bf15a,cluster,CL.0048,agreed,Summary: explains which connectors (coordinating conjunctions vs conjunctive adverbs) can legally join clauses.
+expression-ideas,b30a638d-c440-4297-b920-81973f8bf15a,sub_skill,BND.1,agreed,Summary: overview of coordinating conjunctions and conjunctive adverbs and their grammatical roles in joining clauses.
+expression-ideas,ba66092a-0bc0-48ff-bc59-80b9cb806662,sub_skill,TRN.1,agreed,Summary: easy transition question solved with the SLAP method to identify a contrast relationship.
+expression-ideas,dc9fa424-ab61-4fbc-85e6-3ad9e6fc173d,cluster,CL.0186,agreed,"The text grants negative challenges and then asserts a positive status, keyed with 'nevertheless', a concession-then-claim pattern."
+expression-ideas,dc9fa424-ab61-4fbc-85e6-3ad9e6fc173d,sub_skill,TRN.1,agreed,Summary: recognizes a shift from negative challenges to positive status to choose 'nevertheless' (TRN.1 lexicon).
+expression-ideas,e29ef081-01a1-46f5-9ec6-bacbfc85880e,cluster,CL.0186,agreed,"Summary: identifies a concession relationship keyed by 'Granted', separating the granted point from the main claim."
+expression-ideas,e29ef081-01a1-46f5-9ec6-bacbfc85880e,sub_skill,TRN.1,agreed,Summary: hard transition question solved by identifying a concession relationship using 'Granted' (TRN.1 lexicon).
+geometry,04a8cfdd-84b2-45f7-b6a8-7f1bd5c641e1,cluster,CL.0126,agreed,Summary: tangent used to write a side in terms of another.
+geometry,04a8cfdd-84b2-45f7-b6a8-7f1bd5c641e1,sub_skill,AV.1,agreed,Summary: finds a symbolic area expression for a right triangle.
+geometry,04a8cfdd-84b2-45f7-b6a8-7f1bd5c641e1,sub_skill,RTT3,agreed,Summary: uses tangent to express a leg for the area.
+geometry,06043baf-1780-4cf8-9892-e4a2c5cdeedd,cluster,CL.0004,agreed,Summary: subtracts a known arc from the total circumference.
+geometry,06043baf-1780-4cf8-9892-e4a2c5cdeedd,cluster,CL.0205,agreed,Summary: arcs together make up the full circumference.
+geometry,06043baf-1780-4cf8-9892-e4a2c5cdeedd,sub_skill,CIR3,agreed,Summary: finds an unknown arc length from the total circumference.
+geometry,0d47b58d-ae6c-4936-a713-e3974eaf6e3e,cluster,CL.0212,agreed,Desmos lesson (title) on circle equations; radius read from the graphed circle.
+geometry,0d47b58d-ae6c-4936-a713-e3974eaf6e3e,sub_skill,CIR1,agreed,Summary: finds the radius of a circle from an expanded equation with fractions.
+geometry,0df80c0e-3977-43d8-9271-07dae5288f71,cluster,CL.0086,agreed,Summary: side-ratio problem solved using similarity.
+geometry,0df80c0e-3977-43d8-9271-07dae5288f71,cluster,CL.0173,agreed,Summary: altitude to the hypotenuse makes three similar triangles.
+geometry,0df80c0e-3977-43d8-9271-07dae5288f71,sub_skill,LAT.5,agreed,Summary: all three altitude-on-hypotenuse triangles are similar; solves a side-ratio problem.
+geometry,1cd919ca-07a9-42e9-93c6-0a034b5be870,sub_skill,RTT1,agreed,Summary: Pythagorean triples and multiples used to find missing right-triangle sides.
+geometry,1d561080-dd66-4518-a397-f1ec444b6e1b,cluster,CL.0073,agreed,Summary: reads center and radius from standard form.
+geometry,1d561080-dd66-4518-a397-f1ec444b6e1b,cluster,CL.0212,agreed,Summary: graphs the circle in Desmos for center and radius.
+geometry,1d561080-dd66-4518-a397-f1ec444b6e1b,cluster,CL.0223,agreed,Summary: tests whether points lie on the circle in Desmos.
+geometry,1d561080-dd66-4518-a397-f1ec444b6e1b,sub_skill,CIR1,agreed,Summary: finds center and radius of a circle in standard form.
+geometry,1d561080-dd66-4518-a397-f1ec444b6e1b,sub_skill,CIR2,agreed,Summary: tests points on the circle using Desmos.
+geometry,1f22f532-53de-4df0-81a8-4d5f365e1d13,cluster,CL.0119,agreed,Summary: evaluates the triangle area formula with two base-height pairs.
+geometry,1f22f532-53de-4df0-81a8-4d5f365e1d13,sub_skill,AV.1,agreed,Summary: finds triangle area using two different base-height pairs.
+geometry,21905d0d-1b0d-4d98-a76e-084be5ee8a1e,cluster,CL.0041,agreed,"Summary: finds sin, cos and tan values using unit-circle coordinates."
+geometry,21905d0d-1b0d-4d98-a76e-084be5ee8a1e,sub_skill,CIR5,agreed,"Summary: overview of the unit circle and finding sine, cosine, tangent values."
+geometry,2483dcaf-285f-4191-b38d-c708d3a10c16,cluster,CL.0167,agreed,Summary: uses special right triangles (equilateral altitude).
+geometry,2483dcaf-285f-4191-b38d-c708d3a10c16,cluster,CL.0184,agreed,Summary: right triangles inside the inscribed equilateral triangle.
+geometry,2483dcaf-285f-4191-b38d-c708d3a10c16,sub_skill,AV.1,agreed,Summary: finds the area of an equilateral triangle inscribed in a circle.
+geometry,2483dcaf-285f-4191-b38d-c708d3a10c16,sub_skill,RTT2,agreed,Summary: uses special right triangles to find the area.
+geometry,25331ec3-7ecf-4dea-b3c5-7334faecc60d,cluster,CL.0173,agreed,"Summary: criteria for concluding triangles are similar, including AA."
+geometry,25331ec3-7ecf-4dea-b3c5-7334faecc60d,sub_skill,LAT.4,agreed,"Summary: overview of AA, SAS and SSS triangle similarity criteria."
+geometry,2c3c09ca-74b4-4e19-8e19-14455a00a626,cluster,CL.0086,agreed,Summary: geometric mean relations are proportions used to find a missing segment.
+geometry,2c3c09ca-74b4-4e19-8e19-14455a00a626,sub_skill,LAT.5,agreed,Summary: geometric mean formulas for altitude-on-hypotenuse triangles find a missing segment.
+geometry,315b602f-045e-4de4-8c4f-1590f9e6c362,cluster,CL.0126,agreed,Summary: tangent (opposite/adjacent) used to find a side.
+geometry,315b602f-045e-4de4-8c4f-1590f9e6c362,sub_skill,AV.1,agreed,Summary: finds the area of the right triangle.
+geometry,315b602f-045e-4de4-8c4f-1590f9e6c362,sub_skill,RTT3,agreed,Summary: uses tangent to find the missing leg.
+geometry,38c512d7-c37a-4e8a-a1f2-a81e24e34e8a,cluster,CL.0126,agreed,Summary: SOHCAHTOA as opposite/adjacent/hypotenuse.
+geometry,38c512d7-c37a-4e8a-a1f2-a81e24e34e8a,cluster,CL.0171,agreed,Summary: corresponding angles of similar triangles have equal trig ratios.
+geometry,38c512d7-c37a-4e8a-a1f2-a81e24e34e8a,sub_skill,RTT3,agreed,Summary: overview of SOHCAHTOA trig ratios.
+geometry,38c512d7-c37a-4e8a-a1f2-a81e24e34e8a,sub_skill,RTT4,agreed,Summary: similar triangles share equal trig ratios for corresponding angles.
+geometry,39734952-0d97-4254-a35f-3e5d91b3545a,cluster,CL.0112,agreed,Summary: uses linear pairs/triples on a straight line.
+geometry,39734952-0d97-4254-a35f-3e5d91b3545a,cluster,CL.0179,agreed,Summary: uses vertical angles.
+geometry,39734952-0d97-4254-a35f-3e5d91b3545a,cluster,CL.0220,adjudicated,Summary: solves the angle equations using algebra and Desmos; prod evidence graphs 19x-3 = 7x+45 in Desmos and reads x = 4.
+geometry,39734952-0d97-4254-a35f-3e5d91b3545a,sub_skill,LAT.1,agreed,Summary: uses vertical angles and linear pairs/triples to find unknown angles.
+geometry,3aa4aaa0-0783-46c8-900a-a2ff6d85bd10,cluster,CL.0205,adjudicated,Summary/title: area-of-sector formula; the sector is taken as central angle/360 of the whole circle.
+geometry,3aa4aaa0-0783-46c8-900a-a2ff6d85bd10,sub_skill,CIR3,agreed,"Summary: formula for the area of a sector, a central-angle fraction of the circle."
+geometry,3afce82d-381d-4f10-af97-daa7c01bf4e0,cluster,CL.0205,agreed,Arc length formula treats the arc as a fraction of the circumference (summary).
+geometry,3afce82d-381d-4f10-af97-daa7c01bf4e0,sub_skill,CIR3,agreed,Summary: formula for the length of an arc.
+geometry,3b67ffb6-2d4e-4168-8de1-fe0c33d00b23,cluster,CL.0148,agreed,Summary: names the transversal angle pairs across parallel lines.
+geometry,3b67ffb6-2d4e-4168-8de1-fe0c33d00b23,sub_skill,LAT.1,agreed,"Summary: rules for corresponding, alternate interior and same-side interior angles with parallel lines."
+geometry,3cf168e1-23f6-4ad9-b421-266583315a93,cluster,CL.0116,agreed,Summary: tangent line equation perpendicular to the radius uses the negative-reciprocal slope.
+geometry,3cf168e1-23f6-4ad9-b421-266583315a93,cluster,CL.0208,agreed,Video is on the Radius Tangent Theorem; tangent line found from perpendicularity to radius.
+geometry,3cf168e1-23f6-4ad9-b421-266583315a93,cluster,CL.0223,agreed,Summary: identifies a point on the tangent line using Desmos.
+geometry,3cf168e1-23f6-4ad9-b421-266583315a93,sub_skill,CIR2,agreed,Summary: finds the equation of a tangent line to a circle and a point on it.
+geometry,55a05af5-2c84-4652-9b03-e62aa3e4fd3d,cluster,CL.0028,agreed,Summary: the work being verified is a degree-to-radian conversion.
+geometry,55a05af5-2c84-4652-9b03-e62aa3e4fd3d,cluster,CL.0227,agreed,Summary: uses Desmos to compare trigonometric values in degree and radian modes.
+geometry,55a05af5-2c84-4652-9b03-e62aa3e4fd3d,sub_skill,CIR5,agreed,Summary: verifies degree-to-radian conversions by comparing trig values.
+geometry,5acb7417-6d95-43c2-a9cd-b021e51386b1,cluster,CL.0118,agreed,Summary: introduces the Pythagorean theorem a^2+b^2=c^2.
+geometry,5acb7417-6d95-43c2-a9cd-b021e51386b1,cluster,CL.0147,agreed,Summary: explains how to identify the legs and hypotenuse of a right triangle.
+geometry,5acb7417-6d95-43c2-a9cd-b021e51386b1,sub_skill,RTT1,agreed,Summary: introduction to the Pythagorean theorem.
+geometry,6339f8ef-b30b-4a31-b4e3-e66f77183ad2,cluster,CL.0119,agreed,Summary: evaluates the cylinder volume formula.
+geometry,6339f8ef-b30b-4a31-b4e3-e66f77183ad2,sub_skill,AV.3,agreed,Summary: worked example finding the volume of a cylinder filled to three-quarters.
+geometry,63b7fcb2-6a78-4723-83fe-b50228d4cb2a,cluster,CL.0028,agreed,Summary states the segment converts degrees to radians.
+geometry,63b7fcb2-6a78-4723-83fe-b50228d4cb2a,cluster,CL.0112,agreed,Summary: problem solved using supplementary angles.
+geometry,63b7fcb2-6a78-4723-83fe-b50228d4cb2a,sub_skill,CIR5,agreed,Summary: learn to convert degrees to radians (video: Unit Circle Trigonometry).
+geometry,63b7fcb2-6a78-4723-83fe-b50228d4cb2a,sub_skill,LAT.1,agreed,Summary: solves a circle geometry problem using supplementary angles.
+geometry,680f0374-9487-4e93-a0a9-582b5e4facdf,cluster,CL.0004,agreed,Summary: the two individual volumes add to a given combined volume.
+geometry,680f0374-9487-4e93-a0a9-582b5e4facdf,cluster,CL.0182,agreed,Summary: uses the volume scale factor between similar prisms.
+geometry,680f0374-9487-4e93-a0a9-582b5e4facdf,sub_skill,AV.5,agreed,Summary: volumes of two similar prisms from linear dimensions and combined volume.
+geometry,6aa54d75-ebc6-414a-bae7-9490cf8b2521,cluster,CL.0020,agreed,Summary: finds the radius by completing the square.
+geometry,6aa54d75-ebc6-414a-bae7-9490cf8b2521,cluster,CL.0212,agreed,Summary: alternatively uses Desmos to get the radius.
+geometry,6aa54d75-ebc6-414a-bae7-9490cf8b2521,sub_skill,CIR1,agreed,Summary: finds a circle's radius from its equation.
+geometry,78a93ab2-e494-44dd-8055-12c7c8027711,sub_skill,LAT.4,agreed,Summary: plots triangle vertices in Desmos and uses polygon and a slider to show similarity.
+geometry,7a82737c-0a44-44c2-b747-79893169783d,cluster,CL.0112,agreed,Summary: uses linear pairs.
+geometry,7a82737c-0a44-44c2-b747-79893169783d,cluster,CL.0179,agreed,Summary: uses vertical angles.
+geometry,7a82737c-0a44-44c2-b747-79893169783d,sub_skill,LAT.1,agreed,Summary: finds unknown angles at intersecting lines using vertical angles and linear pairs.
+geometry,7e9ec87a-9ae6-4dc8-987c-95bdedadad5f,cluster,CL.0073,agreed,Summary: reads center and radius from standard form.
+geometry,7e9ec87a-9ae6-4dc8-987c-95bdedadad5f,sub_skill,CIR1,agreed,Summary: standard circle equation and identifying center and radius.
+geometry,879e6543-8860-4300-996a-f298fedcb413,cluster,CL.0174,agreed,Summary: sin of an angle equals cos of its complement.
+geometry,879e6543-8860-4300-996a-f298fedcb413,sub_skill,RTT4,agreed,Summary: cofunction identities and complementary-angle properties of sine and cosine.
+geometry,8f4f9a59-1f46-4312-8474-5360746d3e94,cluster,CL.0136,agreed,Summary: decomposes the pentagon into five triangles.
+geometry,8f4f9a59-1f46-4312-8474-5360746d3e94,cluster,CL.0170,agreed,Summary: uses the isosceles triangles formed in the decomposition.
+geometry,8f4f9a59-1f46-4312-8474-5360746d3e94,sub_skill,LAT.2,adjudicated,Summary: pentagon interior angles via decomposition into isosceles triangles; prod evidence shows 180-54-54=72 for each triangle's central angle (triangle angle sum).
+geometry,8f4f9a59-1f46-4312-8474-5360746d3e94,sub_skill,LAT.3,agreed,Summary: regular pentagon decomposed into five congruent isosceles triangles.
+geometry,946492a3-526b-4a13-b3c7-e3872ac929fd,cluster,CL.0212,agreed,Summary: uses Desmos to read center and radius of the graphed circle.
+geometry,946492a3-526b-4a13-b3c7-e3872ac929fd,sub_skill,CIR1,agreed,Summary: finds center and radius from an expanded equation.
+geometry,95c730d0-f6c8-4f09-8cc1-67b91f0d9773,cluster,CL.0118,agreed,Summary: Pythagorean theorem used to find the slant height.
+geometry,95c730d0-f6c8-4f09-8cc1-67b91f0d9773,cluster,CL.0184,agreed,"Summary: right triangle hidden in the cone (radius, height, slant height)."
+geometry,95c730d0-f6c8-4f09-8cc1-67b91f0d9773,sub_skill,RTT1,agreed,Summary: solves for slant height from radius and height using the Pythagorean theorem.
+geometry,9b34aeda-dd21-413f-9515-ee219c4535ec,cluster,CL.0096,agreed,Cube surface area is the sum of six equal face areas (summary).
+geometry,9b34aeda-dd21-413f-9515-ee219c4535ec,sub_skill,AV.4,agreed,Summary: finds the surface area of a cube from its side length.
+geometry,9cf23467-3829-43b0-9152-86723c2c2200,cluster,CL.0148,agreed,Summary: uses same-side interior angles.
+geometry,9cf23467-3829-43b0-9152-86723c2c2200,sub_skill,LAT.1,agreed,Summary: finds an unknown angle using same-side interior angles of extended parallel lines.
+geometry,9f3da565-0fd1-4ba4-bdfb-1f4901c20453,cluster,CL.0118,agreed,Summary: Pythagorean theorem used to find the segment.
+geometry,9f3da565-0fd1-4ba4-bdfb-1f4901c20453,cluster,CL.0184,agreed,Radius and tangent form the right triangle the Pythagorean step uses (summary).
+geometry,9f3da565-0fd1-4ba4-bdfb-1f4901c20453,cluster,CL.0208,agreed,Summary: applies the Two-Tangent Theorem.
+geometry,9f3da565-0fd1-4ba4-bdfb-1f4901c20453,sub_skill,AV.1,adjudicated,"Summary: segment length found using the perimeter; prod evidence shows working back from the perimeter (238-20-20=198) to a side length, which inverts a polygon perimeter."
+geometry,9f3da565-0fd1-4ba4-bdfb-1f4901c20453,sub_skill,CIR4,agreed,Summary: solves a problem using the Two-Tangent Theorem with the radius.
+geometry,9f3da565-0fd1-4ba4-bdfb-1f4901c20453,sub_skill,RTT1,agreed,Summary: finds a segment length using the Pythagorean theorem.
+geometry,a1b05dbe-65ab-4561-942f-e2765aa4ddb2,cluster,CL.0173,agreed,Summary: criteria for recognizing similar triangles.
+geometry,a1b05dbe-65ab-4561-942f-e2765aa4ddb2,sub_skill,LAT.4,agreed,"Summary: explains AA, SSS and SAS similarity criteria."
+geometry,ac5c167b-102d-47a9-b3e5-1866fe39e7dd,cluster,CL.0182,agreed,"Summary: lengths scale by k, areas by k^2, volumes by k^3."
+geometry,ac5c167b-102d-47a9-b3e5-1866fe39e7dd,sub_skill,AV.5,agreed,"Summary: linear, area and volume scale factors for similar shapes."
+geometry,b3e8a866-aa35-4eb2-baa9-02a19e46197e,cluster,CL.0119,agreed,Summary: substitutes into the provided cone volume formula.
+geometry,b3e8a866-aa35-4eb2-baa9-02a19e46197e,sub_skill,AV.3,agreed,Summary: volume of a right circular cone using the provided formula.
+geometry,bb4d73a5-be45-4641-ab56-3e1bf078d1bd,cluster,CL.0118,agreed,Summary: Pythagorean theorem applied to the diagonal.
+geometry,bb4d73a5-be45-4641-ab56-3e1bf078d1bd,cluster,CL.0167,agreed,Summary: special right triangles in rectangles.
+geometry,bb4d73a5-be45-4641-ab56-3e1bf078d1bd,cluster,CL.0184,agreed,Summary: right triangle formed by a rectangle's diagonal.
+geometry,bb4d73a5-be45-4641-ab56-3e1bf078d1bd,sub_skill,RTT1,agreed,Summary: Pythagorean theorem with rectangle diagonals.
+geometry,bb4d73a5-be45-4641-ab56-3e1bf078d1bd,sub_skill,RTT2,agreed,Summary: special right triangles with rectangle diagonals.
+geometry,c0646463-0363-4c6a-84bc-5ea5b992cbda,cluster,CL.0119,agreed,Summary: substitutes a side length into the equilateral-triangle area formula.
+geometry,c0646463-0363-4c6a-84bc-5ea5b992cbda,sub_skill,AV.1,agreed,Summary: formula and examples for the area of an equilateral triangle from its side length.
+geometry,c75ed51c-24cc-420c-a98e-4f69a562c71e,cluster,CL.0208,agreed,Summary: tangent is perpendicular to the radius.
+geometry,c75ed51c-24cc-420c-a98e-4f69a562c71e,sub_skill,CIR4,agreed,Summary: the radius and tangent line are perpendicular.
+geometry,cee141ee-cceb-46f7-9296-cf737bb09dcc,sub_skill,LI.3,agreed,Summary: finds the range of the third side of a triangle using inequalities (lower and upper bound).
+geometry,d3be9277-4040-4bc4-ac6a-8b68efa64e48,cluster,CL.0118,agreed,Summary: Pythagorean theorem explained.
+geometry,d3be9277-4040-4bc4-ac6a-8b68efa64e48,cluster,CL.0126,agreed,Summary: SOHCAHTOA ratios explained.
+geometry,d3be9277-4040-4bc4-ac6a-8b68efa64e48,sub_skill,RTT1,agreed,Summary: explains the Pythagorean theorem.
+geometry,d3be9277-4040-4bc4-ac6a-8b68efa64e48,sub_skill,RTT3,agreed,Summary: explains SOHCAHTOA ratios for right triangles.
+geometry,d7ec5bc8-0c4c-4bb1-bb18-189536af3cb5,cluster,CL.0118,adjudicated,Summary: presents the slant-height Pythagorean relationship r^2 + h^2 = l^2 for the cone.
+geometry,d7ec5bc8-0c4c-4bb1-bb18-189536af3cb5,cluster,CL.0184,agreed,"Summary: shows the right triangle formed by cone radius, height and slant height."
+geometry,d7ec5bc8-0c4c-4bb1-bb18-189536af3cb5,sub_skill,AV.3,agreed,Summary: overview of the cone's volume formula.
+geometry,d7ec5bc8-0c4c-4bb1-bb18-189536af3cb5,sub_skill,RTT1,agreed,Summary: presents the slant-height Pythagorean relationship for a cone.
+geometry,dbf25571-56de-4def-bc53-bc0c9dcd8b6b,cluster,CL.0208,agreed,"Summary: tangent facts (equal tangent segments, right angles with radius)."
+geometry,dbf25571-56de-4def-bc53-bc0c9dcd8b6b,sub_skill,CIR4,agreed,"Summary: Two-Tangent Theorem, two tangents from an external point form congruent right triangles."
+geometry,e233f582-6f9d-4eb5-83f1-38d08f3aa7bb,cluster,CL.0121,agreed,Summary: right triangle angle properties used for the angle.
+geometry,e233f582-6f9d-4eb5-83f1-38d08f3aa7bb,cluster,CL.0173,agreed,Summary: uses triangle similarity.
+geometry,e233f582-6f9d-4eb5-83f1-38d08f3aa7bb,sub_skill,LAT.2,agreed,Summary: uses right triangle properties to find the angle.
+geometry,e233f582-6f9d-4eb5-83f1-38d08f3aa7bb,sub_skill,LAT.4,agreed,Summary: solves a triangle angle problem using similarity and angle preservation.
+geometry,e30144dc-c5da-411d-9e0e-6b2d837ef4fd,cluster,CL.0174,agreed,Summary: sin of an angle equals cos of its complement.
+geometry,e30144dc-c5da-411d-9e0e-6b2d837ef4fd,sub_skill,RTT4,agreed,Summary: complementary relationship between sine and cosine with examples.
+geometry,e986030d-f012-4b5c-958d-140a8b68a3f6,cluster,CL.0167,agreed,Summary: special right triangle side ratios.
+geometry,e986030d-f012-4b5c-958d-140a8b68a3f6,sub_skill,RTT2,agreed,Summary: overview of 45-45-90 and 30-60-90 triangles and their side ratios.
+geometry,ebc5afa7-4789-4c20-aaf4-f8c399e40c0b,cluster,CL.0119,agreed,Summary: substitutes into the given volume formula.
+geometry,ebc5afa7-4789-4c20-aaf4-f8c399e40c0b,sub_skill,AV.3,agreed,Summary: volume of a rectangular prism using the given formula.
+geometry,edd89a73-d3bd-4727-8396-89ab442d8afb,cluster,CL.0047,agreed,Getting the length from perimeter and width means isolating it in the perimeter equation (summary).
+geometry,edd89a73-d3bd-4727-8396-89ab442d8afb,cluster,CL.0119,agreed,Summary: uses the rectangle perimeter and area formulas.
+geometry,edd89a73-d3bd-4727-8396-89ab442d8afb,sub_skill,AV.1,agreed,Summary: finds a rectangle's area from its perimeter and width.
+geometry,f34de737-a81b-4a4a-8109-41649e6f975c,cluster,CL.0099,agreed,Getting radius from a base area requires taking a square root of r^2 = A/pi.
+geometry,f34de737-a81b-4a4a-8109-41649e6f975c,cluster,CL.0118,agreed,Summary/title: slant height found via the Pythagorean relationship.
+geometry,f34de737-a81b-4a4a-8109-41649e6f975c,cluster,CL.0184,agreed,"Summary: right triangle of radius, height and slant height inside the cone."
+geometry,f34de737-a81b-4a4a-8109-41649e6f975c,sub_skill,AV.2,agreed,Summary: calculates the cone's radius from its base area.
+geometry,f34de737-a81b-4a4a-8109-41649e6f975c,sub_skill,AV.3,agreed,Summary: finds the cone's height from its volume (inverting the volume formula).
+geometry,f34de737-a81b-4a4a-8109-41649e6f975c,sub_skill,RTT1,agreed,"Summary: then finds the slant height (Pythagorean relationship, per video title)."
+geometry,f6302953-38a2-47ac-ad0e-ee43d700033f,cluster,CL.0126,adjudicated,"Summary: evaluates a trig expression in congruent right triangles; sine and cosine are written as side ratios (opp/hyp, adj/hyp)."
+geometry,f6302953-38a2-47ac-ad0e-ee43d700033f,cluster,CL.0171,agreed,"Summary: congruent triangles' equal angles give equal trig values, no side lengths needed."
+geometry,f6302953-38a2-47ac-ad0e-ee43d700033f,sub_skill,RTT3,agreed,Summary: works a trigonometric expression for right triangles.
+geometry,f6302953-38a2-47ac-ad0e-ee43d700033f,sub_skill,RTT4,agreed,Summary: evaluates a trig expression using congruent right triangles without side lengths.
+geometry,f6615e1b-238e-4608-9930-c26980c25af2,cluster,CL.0119,agreed,Summary: substitutes into the given sphere volume formula.
+geometry,f6615e1b-238e-4608-9930-c26980c25af2,sub_skill,AV.3,agreed,Summary: volume of a sphere using the given formula.
+geometry,f7d3d099-d491-428e-84ea-22a31f089d10,cluster,CL.0118,agreed,Summary: Pythagorean theorem.
+geometry,f7d3d099-d491-428e-84ea-22a31f089d10,cluster,CL.0184,agreed,Summary: right triangle from radius and tangent.
+geometry,f7d3d099-d491-428e-84ea-22a31f089d10,cluster,CL.0208,agreed,Summary: Radius Tangent Theorem.
+geometry,f7d3d099-d491-428e-84ea-22a31f089d10,sub_skill,AV.2,agreed,Summary: finds a circle's area.
+geometry,f7d3d099-d491-428e-84ea-22a31f089d10,sub_skill,CIR4,agreed,Summary: uses the Radius Tangent Theorem.
+geometry,f7d3d099-d491-428e-84ea-22a31f089d10,sub_skill,RTT1,agreed,Summary: uses the Pythagorean theorem.
+geometry,f8f9d781-d4d8-48ce-bc2d-d08c195fe720,cluster,CL.0205,agreed,Arc-length and sector formulas treat the arc as a fraction of the circle (summary).
+geometry,f8f9d781-d4d8-48ce-bc2d-d08c195fe720,sub_skill,CIR3,agreed,Summary: identifies and uses formulas for sector area and arc length.
+geometry,f9ffbb21-8170-4024-9867-52d6db953b62,cluster,CL.0136,agreed,Summary: decomposes the hexagon into six triangles.
+geometry,f9ffbb21-8170-4024-9867-52d6db953b62,sub_skill,LAT.3,agreed,Summary: regular hexagon decomposed into six congruent equilateral triangles.
+geometry,fa1f6009-dd4d-4712-9720-150d2dbf5d55,cluster,CL.0118,agreed,Summary: uses the Pythagorean theorem.
+geometry,fa1f6009-dd4d-4712-9720-150d2dbf5d55,cluster,CL.0173,agreed,Summary: uses similar triangles.
+geometry,fa1f6009-dd4d-4712-9720-150d2dbf5d55,sub_skill,LAT.1,agreed,Summary: solves problems using angle relationships.
+geometry,fa1f6009-dd4d-4712-9720-150d2dbf5d55,sub_skill,LAT.5,agreed,Summary: solves geometry problems using similar triangles.
+geometry,fa1f6009-dd4d-4712-9720-150d2dbf5d55,sub_skill,RTT1,agreed,Summary: solves problems using the Pythagorean theorem.
+information-ideas,019f2a40-aaef-400a-bf3b-d52e433f33b5,sub_skill,INF.4,agreed,Easy inference question about pricing models; INF.4's inclusion test cites 'the pricing model' as a generalized subject.
+information-ideas,043f31f3-037f-43b6-a4ae-7d242622ded5,cluster,CL.0125,agreed,Links the claim (student interest and engagement) to the observable result it predicts (higher enrollment and attendance).
+information-ideas,043f31f3-037f-43b6-a4ae-7d242622ded5,sub_skill,COE.3,agreed,Support/Weaken exercise: choose evidence supporting a claim on hip-hop pedagogy via enrollment and attendance rates; no table mentioned.
+information-ideas,0d7e6c12-626c-4ab0-81cc-fca17898959a,cluster,CL.0019,agreed,"Relevance is defined with inequalities, i.e. comparing values across the graph's groups/conditions."
+information-ideas,0d7e6c12-626c-4ab0-81cc-fca17898959a,cluster,CL.0054,agreed,Uses inequalities to define which data are relevant to the claim and quickly eliminate incorrect choices.
+information-ideas,0d7e6c12-626c-4ab0-81cc-fca17898959a,sub_skill,COE.2,agreed,"Complex graph question solved by defining relevance to the claim and eliminating choices (title: 'Relevance First, Accuracy Second')."
+information-ideas,11e87848-23b4-493d-83e8-ab2cba0ad9ac,cluster,CL.0054,agreed,"Segment eliminates irrelevant choices based on the variables in the conclusion, i.e. rejects data not about the claim's groups/measure."
+information-ideas,11e87848-23b4-493d-83e8-ab2cba0ad9ac,sub_skill,COE.2,agreed,"Graph & table question where choices are eliminated as irrelevant to the variables in the student's conclusion (title: 'Relevance First, Accuracy Second')."
+information-ideas,1fb8d41e-12ac-408e-b14a-b665f6c6f2ef,cluster,CL.0125,agreed,Finding data that weakens a hypothesis requires working out what the hypothesis predicts and picking its opposite.
+information-ideas,1fb8d41e-12ac-408e-b14a-b665f6c6f2ef,sub_skill,COE.2,agreed,Hard graph question: find data that weakens a hypothesis about municipal incentives.
+information-ideas,2b7d2c8c-9338-492a-b437-2ecab110233f,sub_skill,COE.2,adjudicated,"Summary: uses data from a table to answer a question on tadpole density, body mass and toxin production; production evidence: select table data supporting the researchers' conclusion, matched to the claim's groups/measure."
+information-ideas,2ede692c-3b78-4ae1-97e0-c3c412cefbde,sub_skill,TSP.2,agreed,SAT Reading question about the overall structure of a text on Choctaw women's history.
+information-ideas,2f4fb85d-f739-4b0c-8832-f021e315e9a7,cluster,CL.0125,adjudicated,"Supporting a hypothesis about a newsletter's influence; production evidence: if the hypothesis is true, readership would exceed copies published, so pick that finding."
+information-ideas,2f4fb85d-f739-4b0c-8832-f021e315e9a7,sub_skill,COE.3,agreed,Support/Weaken exercise: find evidence supporting a hypothesis about a newsletter's influence; no table/graph mentioned.
+information-ideas,3d397e8b-51d5-48ff-a124-2433e19702cc,sub_skill,COE.2,adjudicated,Title 'Command of Evidence - Quantitative'; summary: four-step approach on a systolic blood pressure table; production evidence rules out accurate 'during exercise' data as irrelevant to the resting-pressure claim.
+information-ideas,5f49f7ad-d8b7-49b2-ad74-8a4f24ae4369,cluster,CL.0010,agreed,"Solves by evaluating multi-part answer choices, checking each part against the text."
+information-ideas,5f49f7ad-d8b7-49b2-ad74-8a4f24ae4369,sub_skill,TSP.2,agreed,Analyzes the overall structure of a text about a collaborative spoken word poetry album.
+information-ideas,66ac83ca-1df9-40de-bca4-1b37ba7ca8e5,sub_skill,INF.1,adjudicated,Summary: inference contrasting Guy-Blache's natural acting with the era's typical exaggerated acting; the conclusion states what that difference shows (her style was different/unusual).
+information-ideas,69a16761-9ede-43a4-9add-98d7433a0121,sub_skill,INF.3,adjudicated,"Summary: inference on Dutch paintings and eating habits; production evidence: new lemon-depiction findings, introduced by 'However', cast doubt on art historians' view that the paintings show everyday diets."
+information-ideas,6ccbd054-3249-44fb-b54d-8b7d6327a802,cluster,CL.0054,agreed,Connects the rotor-diameter data to the measure named in the energy-generation claim.
+information-ideas,6ccbd054-3249-44fb-b54d-8b7d6327a802,sub_skill,COE.2,agreed,Graph question solved by connecting rotor diameter data to the energy generation claim.
+information-ideas,70ffc1f1-4310-4371-8732-4930c174c68a,sub_skill,INF.2,adjudicated,Summary: hard inference on rail capacity and travel times; production evidence chains premises on rail's time advantage and capacity-induced lead times to a 'Therefore' conclusion.
+information-ideas,7efcd396-8038-4a53-9eb7-9816f7f492e6,sub_skill,COE.4,agreed,"Hard literary textual Command of Evidence question from the novel Barchester Towers, i.e. choosing a quotation from the named work."
+information-ideas,81d5a8d6-6a42-444a-8144-d0a4f8b5c069,cluster,CL.0063,agreed,Solves the question by identifying and simplifying the claim to support.
+information-ideas,81d5a8d6-6a42-444a-8144-d0a4f8b5c069,sub_skill,COE.2,agreed,Graph question solved by identifying the claim the data must support (title 'SAT English Hacks | Graphs').
+information-ideas,910da1b7-8587-465d-962d-3b3b9826923d,sub_skill,COE.3,agreed,"Textual (non-graph) Command of Evidence question on an informational topic, Neanderthal markings, per title 'Command of Evidence Textual' and summary."
+information-ideas,943c139c-7571-4533-8bf6-c6e41a67f7a5,sub_skill,INF.3,adjudicated,"Summary: 1-2-3 pattern on Cretaceous angiosperms and oxygen; production evidence: 'However' geochemical records conflict with the theory, answer 'may not have depended' (an INF.3 inclusion-test phrase)."
+information-ideas,abd9e4b1-c96d-4bde-b94d-4b0381e2cf56,sub_skill,COE.3,adjudicated,"Summary: hard Command of Evidence question on neural networks and biological brains (informational, no table); production evidence: identify a finding that supports the underlined claim."
+information-ideas,b018b7ac-62b4-4043-8af5-7d7dfdb94017,sub_skill,COE.2,adjudicated,"Title 'Graph & Table Questions (Command of Evidence - Quantitative)'; summary: four-step approach on a table of lion pounce-distance measurement techniques, selecting data that supports a hypothesis."
+information-ideas,b54e9834-dcf6-467c-bc6b-42f2a1042afb,cluster,CL.0097,agreed,"Video's method is the 3-5 word summary of the text's big picture, applied here to a literary main idea question."
+information-ideas,b54e9834-dcf6-467c-bc6b-42f2a1042afb,sub_skill,CID.1,agreed,Main idea question from a literary text about a character's pursuit of alchemy.
+information-ideas,c65e481a-a9c1-45d6-828e-4ba15b9c140d,sub_skill,COE.3,agreed,"Textual (non-graph) Command of Evidence question on an informational topic, solar-roasted chiles, per title 'Command of Evidence Textual' and summary."
+information-ideas,cfcd1d83-c7a2-413a-9f38-ed07a778bef5,sub_skill,COE.2,adjudicated,Summary: uses table data to complete a passage on corn vocabulary; production evidence eliminates choices as irrelevant to the claim and matches the 'no' entries to the contrast set up by 'yet'.
+information-ideas,d0c546d4-14b2-4b66-b4c3-a3c1af0ff60c,cluster,CL.0064,agreed,Solves the inference question by predicting the answer before analyzing the trap choices.
+information-ideas,d0c546d4-14b2-4b66-b4c3-a3c1af0ff60c,sub_skill,INF.2,adjudicated,Summary: inference on Georgia Douglas Johnson's plays solved by predicting the blank; production evidence combines her get-togethers with her wish to know reactions under a 'therefore' lead-in.
+information-ideas,d6e27826-9eef-47ce-9717-c124759d458a,cluster,CL.0097,agreed,Title teaches a 3-5 word summary of the whole text before answering the main idea question.
+information-ideas,d6e27826-9eef-47ce-9717-c124759d458a,sub_skill,CID.1,agreed,Main idea question about urban traffic (title: 'Main Idea Questions & the 3-5 Word Summary').
+information-ideas,d87a4b9d-be76-40c9-985b-d447eb1de842,sub_skill,INF.3,adjudicated,Summary: 1-2-3 pattern on Egyptian feline murals and scribes; production evidence: an alternative explanation weakens the Bastet theory and the answer is the qualified 'not conclusive'.
+psda,0be3ce30-2f63-4746-b76e-9cc03578f210,cluster,CL.0106,agreed,Summary: writes an expression for a single percent increase.
+psda,0be3ce30-2f63-4746-b76e-9cc03578f210,cluster,CL.0240,agreed,Summary: writes an expression for a single percent increase.
+psda,0be3ce30-2f63-4746-b76e-9cc03578f210,sub_skill,PCT.10,agreed,Summary: writes an expression for a single percent increase.
+psda,0be3ce30-2f63-4746-b76e-9cc03578f210,sub_skill,PCT.3,agreed,Summary: writes an expression for a single percent increase.
+psda,0bf1df9f-94c2-444f-a3e7-849a283a4468,cluster,CL.0061,agreed,"Undoing several percent changes requires combining their multipliers, per the summary's plural 'percent changes'."
+psda,0bf1df9f-94c2-444f-a3e7-849a283a4468,cluster,CL.0107,agreed,Summary: solves for the original value given the final value and the percent changes.
+psda,0bf1df9f-94c2-444f-a3e7-849a283a4468,cluster,CL.0242,agreed,Summary: solves for the original value given the final value and the percent changes.
+psda,0bf1df9f-94c2-444f-a3e7-849a283a4468,sub_skill,PCT.12,agreed,"Summary says the final value results from percent changes (plural), so the multipliers are chained before undoing."
+psda,0bf1df9f-94c2-444f-a3e7-849a283a4468,sub_skill,PCT.9,agreed,Summary: solves for the original value given the final value and the percent changes.
+psda,10d2bfd5-0ccd-4622-986f-223a4b701cef,cluster,CL.0131,agreed,Summary: analyzes whether a survey of seventh graders represents the entire middle school population.
+psda,10d2bfd5-0ccd-4622-986f-223a4b701cef,cluster,CL.0281,agreed,Summary: analyzes whether a survey of seventh graders represents the entire middle school population.
+psda,10d2bfd5-0ccd-4622-986f-223a4b701cef,cluster,CL.0283,agreed,Summary: analyzes whether a survey of seventh graders represents the entire middle school population.
+psda,10d2bfd5-0ccd-4622-986f-223a4b701cef,sub_skill,ESC.2,agreed,Summary: analyzes whether a survey of seventh graders represents the entire middle school population.
+psda,10d2bfd5-0ccd-4622-986f-223a4b701cef,sub_skill,ESC2,agreed,Summary: analyzes whether a survey of seventh graders represents the entire middle school population.
+psda,13ef4d6f-e25a-4d2a-8258-a63de8fa6a3b,cluster,CL.0181,agreed,Summary: conditional probability example where a wording change restricts the denominator to a column.
+psda,13ef4d6f-e25a-4d2a-8258-a63de8fa6a3b,cluster,CL.0248,agreed,Summary: conditional probability example where a wording change restricts the denominator to a column.
+psda,13ef4d6f-e25a-4d2a-8258-a63de8fa6a3b,sub_skill,PRB.2,agreed,Summary: conditional probability example where a wording change restricts the denominator to a column.
+psda,13ef4d6f-e25a-4d2a-8258-a63de8fa6a3b,sub_skill,PRB.6,agreed,Summary: conditional probability example where a wording change restricts the denominator to a column.
+psda,184d6783-3008-4e10-b6aa-b8ea28b60d1b,cluster,CL.0022,agreed,Summary: finds the difference between an actual data point and a predicted value on a scatterplot.
+psda,184d6783-3008-4e10-b6aa-b8ea28b60d1b,cluster,CL.0071,agreed,Summary: finds the difference between an actual data point and a predicted value on a scatterplot.
+psda,184d6783-3008-4e10-b6aa-b8ea28b60d1b,cluster,CL.0268,agreed,Summary: finds the difference between an actual data point and a predicted value on a scatterplot.
+psda,184d6783-3008-4e10-b6aa-b8ea28b60d1b,sub_skill,TVD.12,agreed,Summary: finds the difference between an actual data point and a predicted value on a scatterplot.
+psda,184d6783-3008-4e10-b6aa-b8ea28b60d1b,sub_skill,TVD.2,agreed,Summary: finds the difference between an actual data point and a predicted value on a scatterplot.
+psda,1928df52-39b5-4c8e-919f-f9f7a88bcdf5,cluster,CL.0153,agreed,Summary: worked example of a conditional probability question using a two-way frequency table.
+psda,1928df52-39b5-4c8e-919f-f9f7a88bcdf5,cluster,CL.0181,agreed,Summary: worked example of a conditional probability question using a two-way frequency table.
+psda,1928df52-39b5-4c8e-919f-f9f7a88bcdf5,cluster,CL.0248,agreed,Summary: worked example of a conditional probability question using a two-way frequency table.
+psda,1928df52-39b5-4c8e-919f-f9f7a88bcdf5,sub_skill,PRB.2,agreed,Summary: worked example of a conditional probability question using a two-way frequency table.
+psda,1928df52-39b5-4c8e-919f-f9f7a88bcdf5,sub_skill,PRB.6,agreed,Summary: worked example of a conditional probability question using a two-way frequency table.
+psda,1b95d110-23d2-4af6-930a-3326d7033d82,cluster,CL.0098,agreed,Summary: calculates the projected number of students playing an instrument using a given percentage.
+psda,1b95d110-23d2-4af6-930a-3326d7033d82,cluster,CL.0275,agreed,Summary: calculates the projected number of students playing an instrument using a given percentage.
+psda,1b95d110-23d2-4af6-930a-3326d7033d82,sub_skill,INFS.1,agreed,Summary: calculates the projected number of students playing an instrument using a given percentage.
+psda,1b95d110-23d2-4af6-930a-3326d7033d82,sub_skill,INFS.5,agreed,Summary: calculates the projected number of students playing an instrument using a given percentage.
+psda,1bb7f135-e971-4be4-8d48-49002b2c7493,cluster,CL.0032,agreed,Summary: fuel efficiency problem combining a percent decrease with rate-based unit conversion.
+psda,1bb7f135-e971-4be4-8d48-49002b2c7493,cluster,CL.0106,agreed,Summary: fuel efficiency problem combining a percent decrease with rate-based unit conversion.
+psda,1bb7f135-e971-4be4-8d48-49002b2c7493,cluster,CL.0237,agreed,Summary: fuel efficiency problem combining a percent decrease with rate-based unit conversion.
+psda,1bb7f135-e971-4be4-8d48-49002b2c7493,sub_skill,PCT.3,adjudicated,Summary: fuel-efficiency problem applies a percent decrease; prod evidence: 25 mpg decreased by 20% gives the new value via the given-percent multiplier.
+psda,1bb7f135-e971-4be4-8d48-49002b2c7493,sub_skill,PCT.7,adjudicated,Summary: percent decrease applied to an original value (25 mpg reduced 20%) to get a numerical new value before the rate step.
+psda,1bb7f135-e971-4be4-8d48-49002b2c7493,sub_skill,RAT.14,agreed,Summary: fuel efficiency problem combining a percent decrease with rate-based unit conversion.
+psda,1e7214dc-5949-492e-b829-b5add22e8bb1,cluster,CL.0218,agreed,Summary: solves for a quadratic function from a table of values using Desmos quadratic regression.
+psda,1e7214dc-5949-492e-b829-b5add22e8bb1,sub_skill,NLF.1,agreed,Summary: solves for a quadratic function from a table of values using Desmos quadratic regression.
+psda,21baffd1-ed89-4612-9d4b-2703ba278935,cluster,CL.0229,agreed,Summary: factors a quadratic expression into integer and non-integer forms using Desmos regressions with constraints.
+psda,21baffd1-ed89-4612-9d4b-2703ba278935,sub_skill,EE.3,agreed,Summary: factors a quadratic expression into integer and non-integer forms using Desmos regressions with constraints.
+psda,2a07df4a-3c4f-478a-b386-fd5a41611497,cluster,CL.0072,agreed,Summary: reads the temperature on a specific day from a line graph.
+psda,2a07df4a-3c4f-478a-b386-fd5a41611497,cluster,CL.0264,agreed,Summary: reads the temperature on a specific day from a line graph.
+psda,2a07df4a-3c4f-478a-b386-fd5a41611497,sub_skill,TVD.1,agreed,Summary: reads the temperature on a specific day from a line graph.
+psda,2a07df4a-3c4f-478a-b386-fd5a41611497,sub_skill,TVD.6,agreed,Summary: reads the temperature on a specific day from a line graph.
+psda,2a2db040-94e7-4999-add0-53bdeeb5efe1,cluster,CL.0032,agreed,Summary: converts 60 miles per hour into feet per second using dimensional analysis.
+psda,2a2db040-94e7-4999-add0-53bdeeb5efe1,cluster,CL.0235,agreed,Summary: converts 60 miles per hour into feet per second using dimensional analysis.
+psda,2a2db040-94e7-4999-add0-53bdeeb5efe1,sub_skill,RAT.1,agreed,Summary: converts 60 miles per hour into feet per second using dimensional analysis.
+psda,2a2db040-94e7-4999-add0-53bdeeb5efe1,sub_skill,RAT.7,agreed,Summary: converts 60 miles per hour into feet per second using dimensional analysis.
+psda,2d35202a-6d6e-4dbb-b3c3-8aee77fe1501,cluster,CL.0218,agreed,Summary: solves an exponential function with unknown constants from two points using Desmos regression.
+psda,2d35202a-6d6e-4dbb-b3c3-8aee77fe1501,sub_skill,NLF.1,agreed,Summary: solves an exponential function with unknown constants from two points using Desmos regression.
+psda,2fdebc7b-41df-4074-8904-603c54fddee7,cluster,CL.0061,agreed,Summary: writes an expression for chained percent increases with variables.
+psda,2fdebc7b-41df-4074-8904-603c54fddee7,cluster,CL.0106,adjudicated,Summary: expression for chained percent increases; each increase is written as a (1 + p/100) multiplier before chaining.
+psda,2fdebc7b-41df-4074-8904-603c54fddee7,cluster,CL.0241,agreed,Summary: writes an expression for chained percent increases with variables.
+psda,2fdebc7b-41df-4074-8904-603c54fddee7,sub_skill,PCT.10,agreed,Summary: writes an expression for chained percent increases with variables.
+psda,2fdebc7b-41df-4074-8904-603c54fddee7,sub_skill,PCT.12,agreed,Summary: writes an expression for chained percent increases with variables.
+psda,2fdebc7b-41df-4074-8904-603c54fddee7,sub_skill,PCT.5,agreed,Summary: writes an expression for chained percent increases with variables.
+psda,3212e17e-d964-4d71-94ee-cb91cd02d76d,cluster,CL.0224,agreed,Summary: finds the sum of all possible values of x where the mean and median of a list are equal (Desmos lesson).
+psda,3212e17e-d964-4d71-94ee-cb91cd02d76d,sub_skill,OVD.10,agreed,Summary: finds the sum of all possible values of x where the mean and median of a list are equal (Desmos lesson).
+psda,3212e17e-d964-4d71-94ee-cb91cd02d76d,sub_skill,OVD.2,agreed,Summary: finds the sum of all possible values of x where the mean and median of a list are equal (Desmos lesson).
+psda,3287c017-a09d-4ebf-b6a9-17b9dd882ffe,cluster,CL.0023,agreed,Summary: solves a percent increase problem for the percentage by which 180 is greater than 30 (old and new value given).
+psda,3287c017-a09d-4ebf-b6a9-17b9dd882ffe,cluster,CL.0239,agreed,Summary: solves a percent increase problem for the percentage by which 180 is greater than 30 (old and new value given).
+psda,3287c017-a09d-4ebf-b6a9-17b9dd882ffe,sub_skill,PCT.4,agreed,Summary: solves a percent increase problem for the percentage by which 180 is greater than 30 (old and new value given).
+psda,3287c017-a09d-4ebf-b6a9-17b9dd882ffe,sub_skill,PCT.8,agreed,Summary: solves a percent increase problem for the percentage by which 180 is greater than 30 (old and new value given).
+psda,33453c5a-c787-48f0-8810-fcd7fddba72f,cluster,CL.0101,agreed,Summary: identifies the quadratic equation that fits a scatterplot by graphing the choices and plotting key points in Desmos.
+psda,33453c5a-c787-48f0-8810-fcd7fddba72f,cluster,CL.0223,adjudicated,"Summary: plots key points in Desmos to see which graphed choice passes through them; prod evidence: points (0,4) and (5,7)."
+psda,33453c5a-c787-48f0-8810-fcd7fddba72f,cluster,CL.0272,agreed,Summary: identifies the quadratic equation that fits a scatterplot by graphing the choices and plotting key points in Desmos.
+psda,33453c5a-c787-48f0-8810-fcd7fddba72f,sub_skill,TVD.14,agreed,Summary: identifies the quadratic equation that fits a scatterplot by graphing the choices and plotting key points in Desmos.
+psda,33453c5a-c787-48f0-8810-fcd7fddba72f,sub_skill,TVD.4,agreed,Summary: identifies the quadratic equation that fits a scatterplot by graphing the choices and plotting key points in Desmos.
+psda,338c234d-f636-4e2d-82b7-ef153dbeea0a,cluster,CL.0255,agreed,Summary: determines which grade band had the most students from a bar graph.
+psda,338c234d-f636-4e2d-82b7-ef153dbeea0a,sub_skill,OVD.1,agreed,Summary: determines which grade band had the most students from a bar graph.
+psda,338c234d-f636-4e2d-82b7-ef153dbeea0a,sub_skill,OVD.6,agreed,Summary: determines which grade band had the most students from a bar graph.
+psda,3a6ee0f1-874c-440b-86d6-88ca68a147de,cluster,CL.0218,agreed,Summary: solves a quadratic function coefficient problem using Desmos automatic regression.
+psda,3a6ee0f1-874c-440b-86d6-88ca68a147de,sub_skill,NLF.1,agreed,Summary: solves a quadratic function coefficient problem using Desmos automatic regression.
+psda,3ee8343c-7be2-4871-88f3-9a677a260eca,cluster,CL.0209,adjudicated,Summary: explains the complement rule with a die; prod evidence: subtracts P(multiple of three) from one.
+psda,3ee8343c-7be2-4871-88f3-9a677a260eca,cluster,CL.0247,agreed,Summary: explains maximum probability and the complement rule with a die-rolling example.
+psda,3ee8343c-7be2-4871-88f3-9a677a260eca,cluster,CL.0250,adjudicated,Summary: complement rule (1 minus the known probability) used to get the die-roll probability.
+psda,3ee8343c-7be2-4871-88f3-9a677a260eca,sub_skill,PRB.4,agreed,Summary: explains maximum probability and the complement rule with a die-rolling example.
+psda,41551a25-d643-46f0-8cdc-3169bf42e023,cluster,CL.0131,agreed,Summary: identifies a representative sampling method for gathering customer feedback on a new ice cream flavor.
+psda,41551a25-d643-46f0-8cdc-3169bf42e023,cluster,CL.0281,agreed,Summary: identifies a representative sampling method for gathering customer feedback on a new ice cream flavor.
+psda,41551a25-d643-46f0-8cdc-3169bf42e023,sub_skill,ESC.2,agreed,Summary: identifies a representative sampling method for gathering customer feedback on a new ice cream flavor.
+psda,41551a25-d643-46f0-8cdc-3169bf42e023,sub_skill,ESC2,agreed,Summary: identifies a representative sampling method for gathering customer feedback on a new ice cream flavor.
+psda,4a45d2a5-7c2e-4a14-ab64-ac82d8395dad,cluster,CL.0218,agreed,Summary: solves for a linear function from a table of values using Desmos linear regression.
+psda,4a45d2a5-7c2e-4a14-ab64-ac82d8395dad,sub_skill,LF.3,agreed,Summary: solves for a linear function from a table of values using Desmos linear regression.
+psda,4cb997fb-7d3d-4538-847e-40f1c3b044c5,cluster,CL.0229,agreed,Summary: solves an exponential and radical equation for an unknown constant using Desmos list regression.
+psda,4cb997fb-7d3d-4538-847e-40f1c3b044c5,sub_skill,EE.4,adjudicated,Untagged fix. Summary: exponential and radical equation solved for a constant; prod evidence: rewriting/solving with radicals and rational exponents.
+psda,4f86fd45-4e9a-4bd3-886c-86f6b6829e4c,cluster,CL.0050,agreed,Summary: finds the median of a data set from a frequency table using cumulative addition.
+psda,4f86fd45-4e9a-4bd3-886c-86f6b6829e4c,cluster,CL.0257,agreed,Summary: finds the median of a data set from a frequency table using cumulative addition.
+psda,4f86fd45-4e9a-4bd3-886c-86f6b6829e4c,sub_skill,OVD.2,agreed,Summary: finds the median of a data set from a frequency table using cumulative addition.
+psda,4f86fd45-4e9a-4bd3-886c-86f6b6829e4c,sub_skill,OVD.8,agreed,Summary: finds the median of a data set from a frequency table using cumulative addition.
+psda,5481ef9f-1d5f-43bc-ae84-1eb446f7867e,cluster,CL.0060,agreed,Summary: overview of d=rt and the importance of unit consistency between rate and time.
+psda,5481ef9f-1d5f-43bc-ae84-1eb446f7867e,sub_skill,RAT.3,agreed,Summary: overview of d=rt and the importance of unit consistency between rate and time.
+psda,5481ef9f-1d5f-43bc-ae84-1eb446f7867e,sub_skill,RAT.9,agreed,Summary: overview of d=rt and the importance of unit consistency between rate and time.
+psda,55ce600b-6cb4-452c-af98-6685bcd19819,cluster,CL.0107,agreed,Summary: solves percent reversal problems by dividing by the multiplier.
+psda,55ce600b-6cb4-452c-af98-6685bcd19819,cluster,CL.0242,agreed,Summary: solves percent reversal problems by dividing by the multiplier.
+psda,55ce600b-6cb4-452c-af98-6685bcd19819,sub_skill,PCT.3,agreed,Summary: solves percent reversal problems by dividing by the multiplier.
+psda,55ce600b-6cb4-452c-af98-6685bcd19819,sub_skill,PCT.9,agreed,Summary: solves percent reversal problems by dividing by the multiplier.
+psda,59247f80-96e2-42f0-84a0-c3caaf2d6a32,cluster,CL.0131,agreed,Summary: chooses the best survey method to obtain valid results for high school seniors.
+psda,59247f80-96e2-42f0-84a0-c3caaf2d6a32,cluster,CL.0281,agreed,Summary: chooses the best survey method to obtain valid results for high school seniors.
+psda,59247f80-96e2-42f0-84a0-c3caaf2d6a32,sub_skill,ESC.2,agreed,Summary: chooses the best survey method to obtain valid results for high school seniors.
+psda,59247f80-96e2-42f0-84a0-c3caaf2d6a32,sub_skill,ESC2,agreed,Summary: chooses the best survey method to obtain valid results for high school seniors.
+psda,5c03b4fe-acf9-4a52-b3a9-a739c9d63035,cluster,CL.0106,agreed,"Summary: overview of percent multipliers for increase and decrease, including keywords and Desmos calculations."
+psda,5c03b4fe-acf9-4a52-b3a9-a739c9d63035,cluster,CL.0222,agreed,"Summary mentions Desmos calculations of percent multipliers, i.e. typed multiplier arithmetic."
+psda,5c03b4fe-acf9-4a52-b3a9-a739c9d63035,cluster,CL.0240,agreed,"Summary: overview of percent multipliers for increase and decrease, including keywords and Desmos calculations."
+psda,5c03b4fe-acf9-4a52-b3a9-a739c9d63035,sub_skill,PCT.3,agreed,"Summary: overview of percent multipliers for increase and decrease, including keywords and Desmos calculations."
+psda,5cbc7a66-c07d-43f6-9c25-5c774905168a,cluster,CL.0137,agreed,Summary: identifies the positive relationship between temperature and ice cream sales from a scatterplot.
+psda,5cbc7a66-c07d-43f6-9c25-5c774905168a,sub_skill,TVD.10,agreed,Summary: identifies the positive relationship between temperature and ice cream sales from a scatterplot.
+psda,5cbc7a66-c07d-43f6-9c25-5c774905168a,sub_skill,TVD.3,agreed,Summary: identifies the positive relationship between temperature and ice cream sales from a scatterplot.
+psda,6502ce52-f717-4aad-98d6-a894bd7bebab,cluster,CL.0181,agreed,"Summary: introduces conditional probability using a table, restricting the denominator to a specific row."
+psda,6502ce52-f717-4aad-98d6-a894bd7bebab,cluster,CL.0248,agreed,"Summary: introduces conditional probability using a table, restricting the denominator to a specific row."
+psda,6502ce52-f717-4aad-98d6-a894bd7bebab,sub_skill,PRB.2,agreed,"Summary: introduces conditional probability using a table, restricting the denominator to a specific row."
+psda,6502ce52-f717-4aad-98d6-a894bd7bebab,sub_skill,PRB.6,agreed,"Summary: introduces conditional probability using a table, restricting the denominator to a specific row."
+psda,65107399-b4b1-403b-8fb3-2942ac676896,cluster,CL.0131,agreed,Summary: chooses the most appropriate sampling method to estimate a proportion among members.
+psda,65107399-b4b1-403b-8fb3-2942ac676896,cluster,CL.0281,agreed,Summary: chooses the most appropriate sampling method to estimate a proportion among members.
+psda,65107399-b4b1-403b-8fb3-2942ac676896,sub_skill,ESC.2,agreed,Summary: chooses the most appropriate sampling method to estimate a proportion among members.
+psda,65107399-b4b1-403b-8fb3-2942ac676896,sub_skill,ESC2,agreed,Summary: chooses the most appropriate sampling method to estimate a proportion among members.
+psda,66a86ca3-38ad-4590-87a6-a3b3002b090e,cluster,CL.0153,agreed,Summary: introduces two-way frequency tables and how to calculate conditional probabilities from them.
+psda,66a86ca3-38ad-4590-87a6-a3b3002b090e,cluster,CL.0181,agreed,Summary: introduces two-way frequency tables and how to calculate conditional probabilities from them.
+psda,66a86ca3-38ad-4590-87a6-a3b3002b090e,cluster,CL.0248,agreed,Summary: introduces two-way frequency tables and how to calculate conditional probabilities from them.
+psda,66a86ca3-38ad-4590-87a6-a3b3002b090e,sub_skill,PRB.2,agreed,Summary: introduces two-way frequency tables and how to calculate conditional probabilities from them.
+psda,66a86ca3-38ad-4590-87a6-a3b3002b090e,sub_skill,PRB.6,agreed,Summary: introduces two-way frequency tables and how to calculate conditional probabilities from them.
+psda,678ba9a5-b2a9-4289-b9da-f669a476a533,cluster,CL.0157,agreed,Summary: identifies the population represented by a sample of college students in Texas.
+psda,678ba9a5-b2a9-4289-b9da-f669a476a533,cluster,CL.0279,adjudicated,Summary: identifies which population a sample of Texas college students can be generalized to.
+psda,678ba9a5-b2a9-4289-b9da-f669a476a533,cluster,CL.0280,agreed,Summary: identifies the population represented by a sample of college students in Texas.
+psda,678ba9a5-b2a9-4289-b9da-f669a476a533,sub_skill,ESC.1,agreed,Summary: identifies the population represented by a sample of college students in Texas.
+psda,678ba9a5-b2a9-4289-b9da-f669a476a533,sub_skill,ESC1,agreed,Summary: identifies the population represented by a sample of college students in Texas.
+psda,69b27c5e-2bc1-4e3b-b0d0-b77bf0966749,cluster,CL.0061,agreed,Summary: solves percent increase and chained percent change problems to find the final value.
+psda,69b27c5e-2bc1-4e3b-b0d0-b77bf0966749,cluster,CL.0106,agreed,Summary: solves percent increase and chained percent change problems to find the final value.
+psda,69b27c5e-2bc1-4e3b-b0d0-b77bf0966749,cluster,CL.0241,agreed,Summary: solves percent increase and chained percent change problems to find the final value.
+psda,69b27c5e-2bc1-4e3b-b0d0-b77bf0966749,sub_skill,PCT.12,agreed,Summary: solves percent increase and chained percent change problems to find the final value.
+psda,69b27c5e-2bc1-4e3b-b0d0-b77bf0966749,sub_skill,PCT.3,agreed,Summary: solves percent increase and chained percent change problems to find the final value.
+psda,69b27c5e-2bc1-4e3b-b0d0-b77bf0966749,sub_skill,PCT.5,agreed,"Chained percent changes apply a later percent to the result of an earlier one, per the summary."
+psda,69b27c5e-2bc1-4e3b-b0d0-b77bf0966749,sub_skill,PCT.7,agreed,Summary: solves percent increase and chained percent change problems to find the final value.
+psda,6beaa9de-05f0-4db8-8a46-1295c2ed4a37,cluster,CL.0106,adjudicated,"Summary: symbolic percent decrease; prod evidence: 45% decrease written as y*(1 - 0.45) = x, i.e. multiplier 0.55."
+psda,6beaa9de-05f0-4db8-8a46-1295c2ed4a37,cluster,CL.0107,agreed,Summary: solves a symbolic percent decrease problem by isolating the original value.
+psda,6beaa9de-05f0-4db8-8a46-1295c2ed4a37,cluster,CL.0242,agreed,Summary: solves a symbolic percent decrease problem by isolating the original value.
+psda,6beaa9de-05f0-4db8-8a46-1295c2ed4a37,sub_skill,PCT.3,agreed,Summary: solves a symbolic percent decrease problem by isolating the original value.
+psda,6beaa9de-05f0-4db8-8a46-1295c2ed4a37,sub_skill,PCT.9,agreed,Summary: solves a symbolic percent decrease problem by isolating the original value.
+psda,6d3caf84-7ede-4234-aa27-537d496c2438,cluster,CL.0202,agreed,Summary: estimates the number of students owning a smartphone using a sample fraction.
+psda,6d3caf84-7ede-4234-aa27-537d496c2438,cluster,CL.0275,agreed,Summary: estimates the number of students owning a smartphone using a sample fraction.
+psda,6d3caf84-7ede-4234-aa27-537d496c2438,sub_skill,INFS.1,agreed,Summary: estimates the number of students owning a smartphone using a sample fraction.
+psda,6d3caf84-7ede-4234-aa27-537d496c2438,sub_skill,INFS.5,agreed,Summary: estimates the number of students owning a smartphone using a sample fraction.
+psda,759419bd-8a97-4a89-bc7e-ba200e791450,cluster,CL.0218,agreed,Summary: solves a quadratic function problem with given points and a coefficient constraint using Desmos regression.
+psda,759419bd-8a97-4a89-bc7e-ba200e791450,cluster,CL.0229,adjudicated,Summary: Desmos regression run with a coefficient constraint (a condition) to read exact constants of the quadratic.
+psda,759419bd-8a97-4a89-bc7e-ba200e791450,sub_skill,NLF.1,agreed,Summary: solves a quadratic function problem with given points and a coefficient constraint using Desmos regression.
+psda,766b12e1-5dd3-4143-9aac-2abb9658f809,cluster,CL.0218,agreed,"Summary: solves an exponential function problem using Desmos regression, exporting to custom regression for an exact fraction."
+psda,766b12e1-5dd3-4143-9aac-2abb9658f809,cluster,CL.0229,agreed,"Summary: solves an exponential function problem using Desmos regression, exporting to custom regression for an exact fraction."
+psda,766b12e1-5dd3-4143-9aac-2abb9658f809,sub_skill,NLF.1,adjudicated,"Summary: exponential function fit by Desmos regression; prod evidence: question asks for f(4) given two table points (constants from points, then evaluate)."
+psda,77081db2-dd8b-4db8-b8ff-1931fb069c79,cluster,CL.0240,agreed,Summary: determines the percent decrease represented by a given multiplier.
+psda,77081db2-dd8b-4db8-b8ff-1931fb069c79,sub_skill,PCT.11,agreed,Summary: determines the percent decrease represented by a given multiplier.
+psda,77081db2-dd8b-4db8-b8ff-1931fb069c79,sub_skill,PCT.4,agreed,Summary: determines the percent decrease represented by a given multiplier.
+psda,7a615262-e7a4-4415-9003-a5aa237d9671,cluster,CL.0154,agreed,Summary: interprets the y-intercept of a trend line for smoking percentage over time.
+psda,7a615262-e7a4-4415-9003-a5aa237d9671,cluster,CL.0269,agreed,Summary: interprets the y-intercept of a trend line for smoking percentage over time.
+psda,7a615262-e7a4-4415-9003-a5aa237d9671,sub_skill,TVD.13,agreed,Summary: interprets the y-intercept of a trend line for smoking percentage over time.
+psda,7a615262-e7a4-4415-9003-a5aa237d9671,sub_skill,TVD.3,agreed,Summary: interprets the y-intercept of a trend line for smoking percentage over time.
+psda,7f89ec73-ff79-4bdd-a5e9-2b896771cde0,cluster,CL.0202,agreed,Summary: solves four problems estimating a population quantity from a representative sample's proportion.
+psda,7f89ec73-ff79-4bdd-a5e9-2b896771cde0,cluster,CL.0275,agreed,Summary: solves four problems estimating a population quantity from a representative sample's proportion.
+psda,7f89ec73-ff79-4bdd-a5e9-2b896771cde0,sub_skill,INFS.1,agreed,Summary: solves four problems estimating a population quantity from a representative sample's proportion.
+psda,7f89ec73-ff79-4bdd-a5e9-2b896771cde0,sub_skill,INFS.5,agreed,Summary: solves four problems estimating a population quantity from a representative sample's proportion.
+psda,92e80c99-d59f-40e0-aa1a-1c232210f9b9,cluster,CL.0026,agreed,"Summary: overview of mean, median, mode and range, including how they change when data is added."
+psda,92e80c99-d59f-40e0-aa1a-1c232210f9b9,cluster,CL.0027,adjudicated,"Summary: overview covers range; prod evidence: range of 1, 10, 25, 30 computed as 30 - 1."
+psda,92e80c99-d59f-40e0-aa1a-1c232210f9b9,cluster,CL.0062,agreed,"Summary: overview of mean, median, mode and range, including how they change when data is added."
+psda,92e80c99-d59f-40e0-aa1a-1c232210f9b9,cluster,CL.0262,agreed,"Summary: overview of mean, median, mode and range, including how they change when data is added."
+psda,92e80c99-d59f-40e0-aa1a-1c232210f9b9,sub_skill,OVD.11,agreed,"Summary: overview of mean, median, mode and range, including how they change when data is added."
+psda,92e80c99-d59f-40e0-aa1a-1c232210f9b9,sub_skill,OVD.2,agreed,"Summary: overview of mean, median, mode and range, including how they change when data is added."
+psda,92e80c99-d59f-40e0-aa1a-1c232210f9b9,sub_skill,OVD.5,agreed,"Summary: overview of mean, median, mode and range, including how they change when data is added."
+psda,999bf71c-174f-4f10-adc4-734285534f31,cluster,CL.0029,adjudicated,Summary: converts probability fractions to decimals and percentages; prod evidence: 1/6 to decimal then percent.
+psda,999bf71c-174f-4f10-adc4-734285534f31,cluster,CL.0068,adjudicated,Summary: basic probability of coin flips and dice written as favorable outcomes over the whole set of outcomes.
+psda,999bf71c-174f-4f10-adc4-734285534f31,cluster,CL.0246,agreed,"Summary: intro to basic probability (coin flips, dice) and converting fractions to decimals and percentages."
+psda,999bf71c-174f-4f10-adc4-734285534f31,sub_skill,PRB.1,agreed,"Summary: intro to basic probability (coin flips, dice) and converting fractions to decimals and percentages."
+psda,999bf71c-174f-4f10-adc4-734285534f31,sub_skill,PRB.5,agreed,"Summary: intro to basic probability (coin flips, dice) and converting fractions to decimals and percentages."
+psda,99b07a33-09c2-4079-9c07-a0981e1c47ba,cluster,CL.0157,agreed,Summary: identifies the population represented by a sample of Chicago households.
+psda,99b07a33-09c2-4079-9c07-a0981e1c47ba,cluster,CL.0279,adjudicated,Summary: identifies which population a sample of Chicago households can be generalized to.
+psda,99b07a33-09c2-4079-9c07-a0981e1c47ba,cluster,CL.0280,agreed,Summary: identifies the population represented by a sample of Chicago households.
+psda,99b07a33-09c2-4079-9c07-a0981e1c47ba,sub_skill,ESC.1,agreed,Summary: identifies the population represented by a sample of Chicago households.
+psda,99b07a33-09c2-4079-9c07-a0981e1c47ba,sub_skill,ESC1,agreed,Summary: identifies the population represented by a sample of Chicago households.
+psda,99cb5b9f-0c97-452d-8877-708a6fa11c60,cluster,CL.0224,agreed,Summary: finds the mean of a list of heights using the Desmos mean function.
+psda,99cb5b9f-0c97-452d-8877-708a6fa11c60,sub_skill,OVD.2,agreed,Summary: finds the mean of a list of heights using the Desmos mean function.
+psda,99cb5b9f-0c97-452d-8877-708a6fa11c60,sub_skill,OVD.7,agreed,Summary: finds the mean of a list of heights using the Desmos mean function.
+psda,9c6a0db7-c541-465f-a42d-29f972505b3f,cluster,CL.0050,adjudicated,"Summary: median from a histogram; prod evidence: (n+1)/2 gives position 7.5, so median averages the 7th and 8th values across grouped bars."
+psda,9c6a0db7-c541-465f-a42d-29f972505b3f,cluster,CL.0062,agreed,Summary: finds the median from a histogram by averaging the middle values.
+psda,9c6a0db7-c541-465f-a42d-29f972505b3f,cluster,CL.0257,agreed,Summary: finds the median from a histogram by averaging the middle values.
+psda,9c6a0db7-c541-465f-a42d-29f972505b3f,sub_skill,OVD.2,agreed,Summary: finds the median from a histogram by averaging the middle values.
+psda,9c6a0db7-c541-465f-a42d-29f972505b3f,sub_skill,OVD.8,agreed,Summary: finds the median from a histogram by averaging the middle values.
+psda,a087d56f-9af3-44fe-8fd7-d9eb497c78b2,cluster,CL.0224,agreed,Summary: finds a missing integer in a data set using Desmos to graph the mean and test values.
+psda,a087d56f-9af3-44fe-8fd7-d9eb497c78b2,sub_skill,OVD.12,agreed,Summary: finds a missing integer in a data set using Desmos to graph the mean and test values.
+psda,a087d56f-9af3-44fe-8fd7-d9eb497c78b2,sub_skill,OVD.4,agreed,Summary: finds a missing integer in a data set using Desmos to graph the mean and test values.
+psda,a3417206-026c-45fb-8316-071a6aa9479e,cluster,CL.0224,agreed,Summary: uses Desmos list statistics like mean and median to solve or check problems.
+psda,a3417206-026c-45fb-8316-071a6aa9479e,sub_skill,OVD.2,agreed,Summary: uses Desmos list statistics like mean and median to solve or check problems.
+psda,a3417206-026c-45fb-8316-071a6aa9479e,sub_skill,OVD.7,adjudicated,Summary: Desmos list statistics compute the mean; prod evidence: mean function applied to a list (consistent with agreed OVD.7 on the Desmos-mean segment).
+psda,a3417206-026c-45fb-8316-071a6aa9479e,sub_skill,OVD.8,adjudicated,Summary: Desmos list statistics compute the median of a list to solve or check problems (consistent with agreed OVD.8 on the Desmos-median segment).
+psda,a3c5bfbe-2892-443f-a5c8-67b189223fcc,cluster,CL.0202,agreed,Summary: estimates the number of people who cycle to work in a city using a sample ratio.
+psda,a3c5bfbe-2892-443f-a5c8-67b189223fcc,cluster,CL.0275,agreed,Summary: estimates the number of people who cycle to work in a city using a sample ratio.
+psda,a3c5bfbe-2892-443f-a5c8-67b189223fcc,sub_skill,INFS.1,agreed,Summary: estimates the number of people who cycle to work in a city using a sample ratio.
+psda,a3c5bfbe-2892-443f-a5c8-67b189223fcc,sub_skill,INFS.5,agreed,Summary: estimates the number of people who cycle to work in a city using a sample ratio.
+psda,a7ea17be-f7fa-4c52-b020-e19ad0b0efda,cluster,CL.0106,agreed,Summary: how to calculate a percent increase using a multiplier.
+psda,a7ea17be-f7fa-4c52-b020-e19ad0b0efda,cluster,CL.0240,agreed,Summary: how to calculate a percent increase using a multiplier.
+psda,a7ea17be-f7fa-4c52-b020-e19ad0b0efda,sub_skill,PCT.3,agreed,Summary: how to calculate a percent increase using a multiplier.
+psda,a7ea17be-f7fa-4c52-b020-e19ad0b0efda,sub_skill,PCT.7,agreed,Summary: how to calculate a percent increase using a multiplier.
+psda,aa49c34a-ed7e-4f70-b0d7-a40afada4465,cluster,CL.0123,agreed,Summary: finds a missing value in a data set given the mean.
+psda,aa49c34a-ed7e-4f70-b0d7-a40afada4465,cluster,CL.0259,agreed,Summary: finds a missing value in a data set given the mean.
+psda,aa49c34a-ed7e-4f70-b0d7-a40afada4465,sub_skill,OVD.12,agreed,Summary: finds a missing value in a data set given the mean.
+psda,aa49c34a-ed7e-4f70-b0d7-a40afada4465,sub_skill,OVD.4,agreed,Summary: finds a missing value in a data set given the mean.
+psda,aacd9d6e-eab6-418c-9b22-c74024c0ac2f,cluster,CL.0061,agreed,Summary: calculates chained percent changes by multiplying successive multipliers.
+psda,aacd9d6e-eab6-418c-9b22-c74024c0ac2f,cluster,CL.0241,agreed,Summary: calculates chained percent changes by multiplying successive multipliers.
+psda,aacd9d6e-eab6-418c-9b22-c74024c0ac2f,sub_skill,PCT.12,agreed,Summary: calculates chained percent changes by multiplying successive multipliers.
+psda,aacd9d6e-eab6-418c-9b22-c74024c0ac2f,sub_skill,PCT.5,agreed,Summary: calculates chained percent changes by multiplying successive multipliers.
+psda,afd6266a-2204-4173-92ee-d6c9cc2297e1,cluster,CL.0131,agreed,Summary: overview of random and representative sampling and the rules for generalizing study results.
+psda,afd6266a-2204-4173-92ee-d6c9cc2297e1,cluster,CL.0157,agreed,Summary: overview of random and representative sampling and the rules for generalizing study results.
+psda,afd6266a-2204-4173-92ee-d6c9cc2297e1,cluster,CL.0283,agreed,Summary: overview of random and representative sampling and the rules for generalizing study results.
+psda,afd6266a-2204-4173-92ee-d6c9cc2297e1,sub_skill,ESC.1,agreed,Summary: overview of random and representative sampling and the rules for generalizing study results.
+psda,afd6266a-2204-4173-92ee-d6c9cc2297e1,sub_skill,ESC.2,agreed,Summary: overview of random and representative sampling and the rules for generalizing study results.
+psda,afd6266a-2204-4173-92ee-d6c9cc2297e1,sub_skill,ESC1,agreed,Summary: overview of random and representative sampling and the rules for generalizing study results.
+psda,afd6266a-2204-4173-92ee-d6c9cc2297e1,sub_skill,ESC2,agreed,Summary: overview of random and representative sampling and the rules for generalizing study results.
+psda,b565aa8c-d23b-4096-b3a5-958881d27df8,cluster,CL.0131,agreed,Summary: determines the best sampling method to estimate a class's understanding of a math lesson.
+psda,b565aa8c-d23b-4096-b3a5-958881d27df8,cluster,CL.0281,adjudicated,"Summary: best sampling method for a class; prod evidence: sampling only high, low or middle performers is biased."
+psda,b565aa8c-d23b-4096-b3a5-958881d27df8,sub_skill,ESC.2,agreed,Summary: determines the best sampling method to estimate a class's understanding of a math lesson.
+psda,b565aa8c-d23b-4096-b3a5-958881d27df8,sub_skill,ESC2,agreed,Summary: determines the best sampling method to estimate a class's understanding of a math lesson.
+psda,b7141f8f-3270-436d-94c5-77801054f480,cluster,CL.0002,agreed,Summary: interprets a sample mean and margin of error to find the plausible population mean.
+psda,b7141f8f-3270-436d-94c5-77801054f480,cluster,CL.0274,agreed,Summary: interprets a sample mean and margin of error to find the plausible population mean.
+psda,b7141f8f-3270-436d-94c5-77801054f480,cluster,CL.0277,agreed,Summary: interprets a sample mean and margin of error to find the plausible population mean.
+psda,b7141f8f-3270-436d-94c5-77801054f480,sub_skill,INFS.2,agreed,Summary: interprets a sample mean and margin of error to find the plausible population mean.
+psda,b7141f8f-3270-436d-94c5-77801054f480,sub_skill,INFS.4,agreed,Summary: interprets a sample mean and margin of error to find the plausible population mean.
+psda,b8baf577-8db1-4768-a562-f4cd75fe45f1,cluster,CL.0139,agreed,Summary: identifies the most frequent spending range from a histogram.
+psda,b8baf577-8db1-4768-a562-f4cd75fe45f1,cluster,CL.0255,agreed,Summary: identifies the most frequent spending range from a histogram.
+psda,b8baf577-8db1-4768-a562-f4cd75fe45f1,sub_skill,OVD.1,agreed,Summary: identifies the most frequent spending range from a histogram.
+psda,b8baf577-8db1-4768-a562-f4cd75fe45f1,sub_skill,OVD.6,agreed,Summary: identifies the most frequent spending range from a histogram.
+psda,ba7e9bbf-9ec3-47e6-b457-8972a9940b56,cluster,CL.0224,agreed,Summary: finds the median of a list of numbers using the Desmos median function.
+psda,ba7e9bbf-9ec3-47e6-b457-8972a9940b56,sub_skill,OVD.2,agreed,Summary: finds the median of a list of numbers using the Desmos median function.
+psda,ba7e9bbf-9ec3-47e6-b457-8972a9940b56,sub_skill,OVD.8,agreed,Summary: finds the median of a list of numbers using the Desmos median function.
+psda,cd6686aa-7ca8-4dea-a829-5d1e91b08352,cluster,CL.0153,agreed,Summary: solves four problems reading and interpreting data tables to find specific counts.
+psda,cd6686aa-7ca8-4dea-a829-5d1e91b08352,cluster,CL.0255,agreed,Summary: solves four problems reading and interpreting data tables to find specific counts.
+psda,cd6686aa-7ca8-4dea-a829-5d1e91b08352,sub_skill,OVD.1,agreed,Summary: solves four problems reading and interpreting data tables to find specific counts.
+psda,cd6686aa-7ca8-4dea-a829-5d1e91b08352,sub_skill,OVD.6,agreed,Summary: solves four problems reading and interpreting data tables to find specific counts.
+psda,d816c0b8-4a30-486f-bfa6-dcaf24c213c7,cluster,CL.0101,agreed,Summary: solves a complex radical equation with a constant using Desmos regression and testing the choices.
+psda,d816c0b8-4a30-486f-bfa6-dcaf24c213c7,cluster,CL.0229,agreed,Summary: solves a complex radical equation with a constant using Desmos regression and testing the choices.
+psda,d816c0b8-4a30-486f-bfa6-dcaf24c213c7,sub_skill,NLE.3,adjudicated,Untagged fix. Summary: radical equation with a constant solved via Desmos regression; prod evidence: variable under a square root and in a denominator.
+psda,daf681bc-6dbc-489b-ad06-b8829ccea640,cluster,CL.0154,agreed,Summary: interprets the slope of a trend line relating elephant foot length to shoulder height.
+psda,daf681bc-6dbc-489b-ad06-b8829ccea640,cluster,CL.0269,agreed,Summary: interprets the slope of a trend line relating elephant foot length to shoulder height.
+psda,daf681bc-6dbc-489b-ad06-b8829ccea640,sub_skill,TVD.13,agreed,Summary: interprets the slope of a trend line relating elephant foot length to shoulder height.
+psda,daf681bc-6dbc-489b-ad06-b8829ccea640,sub_skill,TVD.3,agreed,Summary: interprets the slope of a trend line relating elephant foot length to shoulder height.
+psda,e3580743-6189-4c89-9d28-b0184e990298,cluster,CL.0072,adjudicated,Summary: reads the vehicle's value at 4 years off a scatterplot; prod evidence: reads y at x = 4.
+psda,e3580743-6189-4c89-9d28-b0184e990298,cluster,CL.0161,agreed,Summary: determines a vehicle's value after 4 years by reading a scatterplot and calculating the axis scale.
+psda,e3580743-6189-4c89-9d28-b0184e990298,cluster,CL.0264,agreed,Summary: determines a vehicle's value after 4 years by reading a scatterplot and calculating the axis scale.
+psda,e3580743-6189-4c89-9d28-b0184e990298,sub_skill,TVD.1,agreed,Summary: determines a vehicle's value after 4 years by reading a scatterplot and calculating the axis scale.
+psda,e3580743-6189-4c89-9d28-b0184e990298,sub_skill,TVD.6,agreed,Summary: determines a vehicle's value after 4 years by reading a scatterplot and calculating the axis scale.
+psda,e5adf9fc-c95c-45d8-a0f5-143052ad53fd,cluster,CL.0004,agreed,Summary: totals are calculated from the two-way table before percentages.
+psda,e5adf9fc-c95c-45d8-a0f5-143052ad53fd,cluster,CL.0068,adjudicated,Summary: percentages of totals from a two-way table computed as part over the whole reference total.
+psda,e5adf9fc-c95c-45d8-a0f5-143052ad53fd,cluster,CL.0153,agreed,"Summary: solves pizza-sales questions using a two-way table, calculating totals and percentages."
+psda,e5adf9fc-c95c-45d8-a0f5-143052ad53fd,cluster,CL.0244,agreed,"Summary: solves pizza-sales questions using a two-way table, calculating totals and percentages."
+psda,e5adf9fc-c95c-45d8-a0f5-143052ad53fd,sub_skill,OVD.1,adjudicated,Summary: totals calculated from two-way table counts; prod evidence: counts read and summed for questions 1-3.
+psda,e5adf9fc-c95c-45d8-a0f5-143052ad53fd,sub_skill,PCT.15,agreed,"Summary: solves pizza-sales questions using a two-way table, calculating totals and percentages."
+psda,e5f24560-09f7-4fe4-b499-e2ccaf4a73e7,cluster,CL.0154,agreed,Summary: interprets the slope of a trend line relating average income to rent.
+psda,e5f24560-09f7-4fe4-b499-e2ccaf4a73e7,cluster,CL.0269,agreed,Summary: interprets the slope of a trend line relating average income to rent.
+psda,e5f24560-09f7-4fe4-b499-e2ccaf4a73e7,sub_skill,TVD.13,agreed,Summary: interprets the slope of a trend line relating average income to rent.
+psda,e5f24560-09f7-4fe4-b499-e2ccaf4a73e7,sub_skill,TVD.3,agreed,Summary: interprets the slope of a trend line relating average income to rent.
+psda,ed54cc24-cf5e-4e7d-a064-48d0db581dcb,cluster,CL.0153,adjudicated,Summary: two-way table probability; prod evidence: locates the cells for students with cats and dogs.
+psda,ed54cc24-cf5e-4e7d-a064-48d0db581dcb,cluster,CL.0158,agreed,Summary: calculates probability from a two-way table by combining multiple outcomes in the numerator and denominator.
+psda,ed54cc24-cf5e-4e7d-a064-48d0db581dcb,cluster,CL.0247,agreed,Summary: calculates probability from a two-way table by combining multiple outcomes in the numerator and denominator.
+psda,ed54cc24-cf5e-4e7d-a064-48d0db581dcb,sub_skill,PRB.1,agreed,Summary: calculates probability from a two-way table by combining multiple outcomes in the numerator and denominator.
+psda,ed54cc24-cf5e-4e7d-a064-48d0db581dcb,sub_skill,PRB.5,agreed,Summary: calculates probability from a two-way table by combining multiple outcomes in the numerator and denominator.
+psda,f38ec9f8-320a-4444-ad20-f21ed37e5e75,cluster,CL.0255,agreed,Summary: solves four practice problems reading and interpreting data from various graphs.
+psda,f38ec9f8-320a-4444-ad20-f21ed37e5e75,cluster,CL.0264,adjudicated,"Summary: four problems reading values from graphs; prod evidence: temperature on day 4, rainfall in October, room counts."
+psda,f38ec9f8-320a-4444-ad20-f21ed37e5e75,sub_skill,OVD.1,agreed,Summary: solves four practice problems reading and interpreting data from various graphs.
+psda,f38ec9f8-320a-4444-ad20-f21ed37e5e75,sub_skill,OVD.6,agreed,Summary: solves four practice problems reading and interpreting data from various graphs.
+psda,f665b600-4915-48d5-949e-f3db70e8e56c,cluster,CL.0154,agreed,Summary: interprets the y-intercept of a trend line for test scores versus study hours.
+psda,f665b600-4915-48d5-949e-f3db70e8e56c,cluster,CL.0269,agreed,Summary: interprets the y-intercept of a trend line for test scores versus study hours.
+psda,f665b600-4915-48d5-949e-f3db70e8e56c,sub_skill,TVD.13,agreed,Summary: interprets the y-intercept of a trend line for test scores versus study hours.
+psda,f665b600-4915-48d5-949e-f3db70e8e56c,sub_skill,TVD.3,agreed,Summary: interprets the y-intercept of a trend line for test scores versus study hours.
+standard-english,02132f52-8ed0-4cdf-a853-ac78eb6ff4c2,cluster,CL.0048,agreed,Joins two complete sentences with a period.
+standard-english,02132f52-8ed0-4cdf-a853-ac78eb6ff4c2,cluster,CL.0129,agreed,Identifies both sides as independent clauses.
+standard-english,02132f52-8ed0-4cdf-a853-ac78eb6ff4c2,sub_skill,BND.1,agreed,Summary: two independent clauses requiring a period.
+standard-english,0231e985-79f8-446e-b2b1-417f63731f1a,sub_skill,FSS.1,agreed,Summary: distinguishing subject-verb agreement questions from tense questions via answer choices.
+standard-english,0231e985-79f8-446e-b2b1-417f63731f1a,sub_skill,FSS.2,agreed,Summary: the distinction covers recognizing verb tense questions from the choices.
+standard-english,03aeb14f-9e53-40dc-ae99-3ded4eac83a4,cluster,CL.0048,agreed,Joins two complete sentences with comma plus coordinating conjunction.
+standard-english,03aeb14f-9e53-40dc-ae99-3ded4eac83a4,cluster,CL.0129,agreed,Identifies both sides as independent clauses.
+standard-english,03aeb14f-9e53-40dc-ae99-3ded4eac83a4,sub_skill,BND.1,agreed,Summary: two independent clauses requiring a comma plus coordinating conjunction.
+standard-english,08ce6404-910a-4264-9629-352bc9b1bc76,sub_skill,FSS.2,agreed,Summary: introduction to identifying verb tense questions with the 'odd verb out' trick.
+standard-english,0a108060-a70c-4440-8840-062562d981f7,cluster,CL.0109,agreed,Tests each word for possession to decide apostrophe use.
+standard-english,0a108060-a70c-4440-8840-062562d981f7,sub_skill,FSS.4,agreed,Summary: step-by-step strategy for apostrophe questions testing each word for possession.
+standard-english,0c4b1991-2dea-48a2-afa4-53aed33eb6c7,cluster,CL.0109,agreed,Places 's or s' for singular vs plural owners.
+standard-english,0c4b1991-2dea-48a2-afa4-53aed33eb6c7,sub_skill,FSS.4,agreed,Summary: apostrophe placement on singular and plural possessive nouns.
+standard-english,0f2fb21a-e2e5-4e4f-b42e-fd6f243f2c25,cluster,CL.0059,agreed,Matches verb to the plural subject 'peoples'.
+standard-english,0f2fb21a-e2e5-4e4f-b42e-fd6f243f2c25,sub_skill,FSS.1,agreed,Summary: subject-verb agreement question solved by identifying the plural subject 'peoples'.
+standard-english,13a7c1b6-f078-4b9c-bae3-5f3149937157,cluster,CL.0085,agreed,Sets off a non-essential phrase with a matching pair of commas.
+standard-english,13a7c1b6-f078-4b9c-bae3-5f3149937157,cluster,CL.0135,agreed,Treats the parenthetical phrase as non-essential (removable) before punctuating.
+standard-english,13a7c1b6-f078-4b9c-bae3-5f3149937157,sub_skill,BND.2,agreed,Summary: worked example setting off a non-essential parenthetical phrase with a matching pair of commas.
+standard-english,22bc751a-7529-4151-891b-efe792230555,cluster,CL.0130,adjudicated,"Summary: infinitive verbs to express purpose; the clause already has its main verb ('introduces'), so the blank takes the to-infinitive 'to reveal'."
+standard-english,22bc751a-7529-4151-891b-efe792230555,sub_skill,FSS.3,agreed,"Summary: infinitive verbs to express purpose or goals, worked on a question."
+standard-english,235e8715-4ff7-45e6-9804-67e67066a74c,cluster,CL.0048,agreed,Covers periods/semicolons between complete sentences.
+standard-english,235e8715-4ff7-45e6-9804-67e67066a74c,cluster,CL.0065,agreed,Covers semicolons in complex lists.
+standard-english,235e8715-4ff7-45e6-9804-67e67066a74c,sub_skill,BND.1,agreed,Summary: periods and semicolons at sentence boundaries.
+standard-english,235e8715-4ff7-45e6-9804-67e67066a74c,sub_skill,BND.4,agreed,Summary: semicolons in complex lists.
+standard-english,235e8715-4ff7-45e6-9804-67e67066a74c,sub_skill,BND.5,agreed,Summary: overview includes question marks as end punctuation.
+standard-english,2465480d-067a-4e53-b986-87773a669d2d,sub_skill,WIC.1,adjudicated,Summary: vocabulary-in-context blank completed with 'separate'; clues 'segregation' and 'whites only section' restate the meaning of the answer.
+standard-english,26205866-484e-48ea-9444-1b26a86cfa95,cluster,CL.0211,agreed,Uses dates and surrounding verbs to set the tense.
+standard-english,26205866-484e-48ea-9444-1b26a86cfa95,sub_skill,FSS.2,agreed,Summary: dates and other verbs as context clues for verb tense.
+standard-english,30b09cb6-3aa7-4056-98db-9c0df6fb08e2,cluster,CL.0059,agreed,Matches verb number to the subject.
+standard-english,30b09cb6-3aa7-4056-98db-9c0df6fb08e2,sub_skill,FSS.1,agreed,Summary: subject-verb agreement solved by spotting singular/plural verbs in the choices.
+standard-english,3156af93-779d-4637-bf18-7024535df918,cluster,CL.0211,agreed,Chooses tense from the habitual time frame in the text.
+standard-english,3156af93-779d-4637-bf18-7024535df918,sub_skill,FSS.2,agreed,"Summary: simple present tense for habits, worked on a question."
+standard-english,32553efa-dcbf-4e21-95a9-db423865b95f,cluster,CL.0059,agreed,Applies subject-verb agreement to pick the verb number.
+standard-english,32553efa-dcbf-4e21-95a9-db423865b95f,sub_skill,FSS.1,agreed,Summary: applies the odd-one-out trick and subject-verb agreement rules to another question.
+standard-english,3285bd6f-64f7-4216-9321-c4350b5d18e3,cluster,CL.0059,agreed,The it/they test picks the verb number matching the subject.
+standard-english,3285bd6f-64f7-4216-9321-c4350b5d18e3,sub_skill,FSS.1,agreed,Summary: identify and solve subject-verb agreement questions with the it/they test.
+standard-english,35775f1e-0280-4f96-9d1e-ab0e12fc817e,cluster,CL.0129,agreed,Checks whether each side becomes a complete sentence.
+standard-english,35775f1e-0280-4f96-9d1e-ab0e12fc817e,cluster,CL.0130,agreed,Checks whether the clause already has its main verb before choosing a verb form.
+standard-english,35775f1e-0280-4f96-9d1e-ab0e12fc817e,sub_skill,BND.1,agreed,Summary: avoid comma splices by checking whether a choice creates two independent clauses joined by a comma.
+standard-english,35775f1e-0280-4f96-9d1e-ab0e12fc817e,sub_skill,FSS.3,agreed,"Summary: applied to verb questions, where a finite choice would create a second independent clause."
+standard-english,361850aa-e2dd-4803-9adb-72b10c6694e4,cluster,CL.0048,agreed,Joins two complete sentences with comma plus coordinating conjunction.
+standard-english,361850aa-e2dd-4803-9adb-72b10c6694e4,sub_skill,BND.1,agreed,Summary: worked example using a comma and a coordinating conjunction to join two independent clauses.
+standard-english,3e38a504-207b-4da4-b3fe-09aa3ab0f418,cluster,CL.0059,agreed,Matches verb number to the subject found.
+standard-english,3e38a504-207b-4da4-b3fe-09aa3ab0f418,cluster,CL.0144,agreed,Finding the subject is an explicit step.
+standard-english,3e38a504-207b-4da4-b3fe-09aa3ab0f418,sub_skill,FSS.1,agreed,Summary: solves a subject-verb agreement question with the 3 vs 1 strategy and finding the subject.
+standard-english,43459336-da1c-4f65-859b-7a2aed4fcf21,cluster,CL.0144,agreed,Analyzes ways the true subject is hidden and how to find it.
+standard-english,43459336-da1c-4f65-859b-7a2aed4fcf21,sub_skill,FSS.1,agreed,Summary: five 'subject twists' the SAT uses to hide the true subject in agreement questions.
+standard-english,47c99460-bf6c-4fad-bc32-5b08ab4f06ff,cluster,CL.0109,agreed,Tests possession and singular/plural owner to place the apostrophe.
+standard-english,47c99460-bf6c-4fad-bc32-5b08ab4f06ff,sub_skill,FSS.4,agreed,Summary: 'of the' trick for possession and checking singular vs plural nouns.
+standard-english,47e81665-5d4f-4c37-92e0-d0713d5316bf,cluster,CL.0211,agreed,Chooses past tense from the completed-past time frame.
+standard-english,47e81665-5d4f-4c37-92e0-d0713d5316bf,sub_skill,FSS.2,agreed,"Summary: simple past tense for completed past events, worked on a question."
+standard-english,48095d8b-8dc6-4630-8998-1d44220e2e6d,cluster,CL.0211,agreed,Uses the passage's past time frame to pick tense.
+standard-english,48095d8b-8dc6-4630-8998-1d44220e2e6d,sub_skill,FSS.2,agreed,Summary: verb tense question solved by matching the passage's past tense context.
+standard-english,49b57968-9a70-410c-9efd-8432ed485a76,cluster,CL.0129,agreed,Tests parts for dependent vs independent clause status.
+standard-english,49b57968-9a70-410c-9efd-8432ed485a76,sub_skill,BND.2,adjudicated,Summary: sentence structure question solved by identifying dependent and independent clauses; the introductory dependent element 'In 1945... bill' is set off from the main clause with a comma.
+standard-english,4dd58ad9-97b9-4daf-b8e0-4809cd1bc91d,cluster,CL.0065,agreed,Upgrades list separators to semicolons when items contain commas.
+standard-english,4dd58ad9-97b9-4daf-b8e0-4809cd1bc91d,sub_skill,BND.4,agreed,Summary: semicolons separate list items that themselves contain commas.
+standard-english,4f964a5c-88b0-4850-98ba-2cffe839c30b,cluster,CL.0108,agreed,Colon rules lesson; title signals colons introduce more than lists (explanations/examples).
+standard-english,4f964a5c-88b0-4850-98ba-2cffe839c30b,sub_skill,BND.4,agreed,Title 'Colons — not just for lists'; summary: rules for using colons on the SAT.
+standard-english,5058ac76-397b-4406-bbe9-cba5c213d601,cluster,CL.0085,agreed,"Teaches matching pairs of dashes, commas or parentheses around nonessential interruptions."
+standard-english,5058ac76-397b-4406-bbe9-cba5c213d601,sub_skill,BND.2,agreed,"Summary: pairs of dashes, commas and parentheses set off nonessential interruptions."
+standard-english,577461e2-34eb-42cd-8b0e-c6908bd78606,cluster,CL.0211,agreed,Uses time clues and surrounding verbs to choose tense.
+standard-english,577461e2-34eb-42cd-8b0e-c6908bd78606,sub_skill,FSS.2,agreed,Summary: verb tense and aspect questions solved by consistency and time clues.
+standard-english,58c7002c-bc2d-404a-bcf2-59999865fe3f,sub_skill,FSS.3,agreed,Summary: base verbs after modal verbs (plain form after a modal).
+standard-english,5e510f46-9a88-41a5-9c13-6291d2f87430,cluster,CL.0130,agreed,Finite vs non-finite check is the first decision in these mixed questions.
+standard-english,5e510f46-9a88-41a5-9c13-6291d2f87430,sub_skill,FSS.1,agreed,Summary: these questions combine the finite decision with agreement decisions.
+standard-english,5e510f46-9a88-41a5-9c13-6291d2f87430,sub_skill,FSS.2,agreed,Summary: these questions combine the finite decision with tense decisions.
+standard-english,5e510f46-9a88-41a5-9c13-6291d2f87430,sub_skill,FSS.3,agreed,Summary: complex verb questions mixing finite/non-finite distinctions.
+standard-english,60756d61-2afb-4a29-8e93-8ecb9e8b0176,cluster,CL.0108,agreed,Colon follows a complete clause to resolve the splice.
+standard-english,60756d61-2afb-4a29-8e93-8ecb9e8b0176,cluster,CL.0149,agreed,Decides which side of the colon 'though' belongs on.
+standard-english,60756d61-2afb-4a29-8e93-8ecb9e8b0176,sub_skill,BND.2,agreed,Summary: 'though' is set off alongside the colon boundary.
+standard-english,60756d61-2afb-4a29-8e93-8ecb9e8b0176,sub_skill,BND.4,agreed,Summary: uses a colon with 'though' to resolve a comma splice.
+standard-english,6674b90d-2690-471c-b753-c17168f69e8f,cluster,CL.0051,agreed,Matches pronoun to the antecedent found.
+standard-english,6674b90d-2690-471c-b753-c17168f69e8f,cluster,CL.0199,agreed,"Traces the pronoun to its antecedent, ignoring nonessential phrases."
+standard-english,6674b90d-2690-471c-b753-c17168f69e8f,sub_skill,FSS.4,agreed,Summary: pronoun questions solved by finding the antecedent.
+standard-english,68856e40-d1ee-4296-8d3b-5c76c92dfd7f,cluster,CL.0109,agreed,Apostrophes shown for possession.
+standard-english,68856e40-d1ee-4296-8d3b-5c76c92dfd7f,sub_skill,FSS.4,agreed,Summary: apostrophes for possession and contractions (brief overview).
+standard-english,68aae7ff-4f67-4d2c-91c2-5e8be804641c,cluster,CL.0211,agreed,Chooses future tense from the upcoming time frame.
+standard-english,68aae7ff-4f67-4d2c-91c2-5e8be804641c,sub_skill,FSS.2,agreed,"Summary: future tense for upcoming actions, worked on a question."
+standard-english,6aa0fec4-fb04-4948-a665-3c221f3d0537,cluster,CL.0109,agreed,"Uses apostrophes only for possession, not plain plurals."
+standard-english,6aa0fec4-fb04-4948-a665-3c221f3d0537,sub_skill,FSS.4,agreed,Summary: apostrophes for possession vs regular plurals; spotting unnecessary apostrophes.
+standard-english,6b4b6e6d-13a9-4fb1-acf2-fa989ee4a6cc,cluster,CL.0129,agreed,Confirms both sides are independent clauses.
+standard-english,6b4b6e6d-13a9-4fb1-acf2-fa989ee4a6cc,cluster,CL.0149,agreed,Decides which clause 'though' belongs to and places the semicolon accordingly.
+standard-english,6b4b6e6d-13a9-4fb1-acf2-fa989ee4a6cc,sub_skill,BND.1,agreed,Summary: punctuating a join of two independent clauses that includes the transition 'though'.
+standard-english,6b4b6e6d-13a9-4fb1-acf2-fa989ee4a6cc,sub_skill,BND.2,agreed,Summary: the supplementary adverb 'though' at the clause boundary must also be set off.
+standard-english,6d76c594-8013-4396-a730-f2f3f285bf2d,cluster,CL.0199,agreed,"Summary: resolves an ambiguous pronoun by choosing the most specific noun, which requires tracing what it refers to."
+standard-english,6d76c594-8013-4396-a730-f2f3f285bf2d,sub_skill,FSS.4,adjudicated,Summary: ambiguous pronoun question solved by replacing the pronoun with the most specific noun; options vary in pronoun vs noun for the antecedent.
+standard-english,6f1a0747-c8f8-4b04-afc7-295eb83d5549,cluster,CL.0048,agreed,Overview includes comma plus FANBOYS between clauses.
+standard-english,6f1a0747-c8f8-4b04-afc7-295eb83d5549,cluster,CL.0065,agreed,Overview includes the list comma rule.
+standard-english,6f1a0747-c8f8-4b04-afc7-295eb83d5549,cluster,CL.0066,agreed,Overview includes commas after introductory elements.
+standard-english,6f1a0747-c8f8-4b04-afc7-295eb83d5549,cluster,CL.0085,agreed,Overview includes setting off non-essential info with commas.
+standard-english,6f1a0747-c8f8-4b04-afc7-295eb83d5549,sub_skill,BND.1,agreed,Summary: overview covers the FANBOYS comma rule for joining clauses.
+standard-english,6f1a0747-c8f8-4b04-afc7-295eb83d5549,sub_skill,BND.2,agreed,Summary: overview covers commas for non-essential info and introductory elements.
+standard-english,6f1a0747-c8f8-4b04-afc7-295eb83d5549,sub_skill,BND.4,agreed,Summary: overview of comma rules tested on the SAT including lists.
+standard-english,770df0bb-46b0-4c20-9dd9-2a4b2dcc49ff,cluster,CL.0048,agreed,Joins two complete sentences with a semicolon.
+standard-english,770df0bb-46b0-4c20-9dd9-2a4b2dcc49ff,cluster,CL.0129,agreed,Identifies both sides as independent clauses.
+standard-english,770df0bb-46b0-4c20-9dd9-2a4b2dcc49ff,sub_skill,BND.1,agreed,Summary: two independent clauses requiring a semicolon.
+standard-english,7b812872-9ad4-45f5-be78-a6f01b24867c,cluster,CL.0059,agreed,Matches verb number to the true subject.
+standard-english,7b812872-9ad4-45f5-be78-a6f01b24867c,cluster,CL.0144,agreed,Finds the inverted subject past a plural distractor.
+standard-english,7b812872-9ad4-45f5-be78-a6f01b24867c,sub_skill,FSS.1,agreed,Summary: subject-verb agreement with an inverted structure and a plural distractor.
+standard-english,7cc02cc3-0724-4d80-b827-3be15c6182a9,cluster,CL.0067,agreed,Fixes a dangling modifier by putting its noun right after it.
+standard-english,7cc02cc3-0724-4d80-b827-3be15c6182a9,sub_skill,FSS.5,agreed,Summary: subject-modifier placement question and the concept of dangling modifiers.
+standard-english,83671f91-89ef-4e03-b802-b85881a970d0,cluster,CL.0067,agreed,Identifies what the modifier describes and places it right after.
+standard-english,83671f91-89ef-4e03-b802-b85881a970d0,sub_skill,FSS.5,agreed,Summary: subject-modifier placement question solved by identifying the logical subject.
+standard-english,8777c6af-883e-4f2f-8011-25068b90da3f,cluster,CL.0059,agreed,Reviews matching verb number to subjects such as group nouns.
+standard-english,8777c6af-883e-4f2f-8011-25068b90da3f,cluster,CL.0144,agreed,Covers skipping interrupting and prepositional phrases to find the subject.
+standard-english,8777c6af-883e-4f2f-8011-25068b90da3f,sub_skill,FSS.1,agreed,"Summary: reviews subject-verb agreement rules including interrupting phrases, prepositional phrases and group nouns."
+standard-english,88bed0e6-caf2-4779-8967-5588d9de1eb1,cluster,CL.0117,agreed,Uses had + participle for the earlier of two past actions.
+standard-english,88bed0e6-caf2-4779-8967-5588d9de1eb1,sub_skill,FSS.2,agreed,Summary: past perfect for actions preceding other past actions.
+standard-english,89108504-083b-4ae2-8134-5b112c27c18d,cluster,CL.0108,agreed,Teaches that a colon needs a complete independent clause before it.
+standard-english,89108504-083b-4ae2-8134-5b112c27c18d,sub_skill,BND.4,agreed,Summary: colons (and single dashes) must be preceded by an independent clause setup.
+standard-english,897a9d83-e040-4ae1-aa21-58ce50fb49ad,cluster,CL.0211,agreed,Chooses tense from the general-fact time frame in the text.
+standard-english,897a9d83-e040-4ae1-aa21-58ce50fb49ad,sub_skill,FSS.2,agreed,"Summary: simple present tense for general facts, worked on a question."
+standard-english,8cc1ee95-0af1-49f4-81ca-6e2b5b7708d2,cluster,CL.0130,agreed,Decides whether the clause needs a finite verb or a non-finite form.
+standard-english,8cc1ee95-0af1-49f4-81ca-6e2b5b7708d2,sub_skill,FSS.3,agreed,Summary: verb form questions solved by distinguishing finite and non-finite forms.
+standard-english,908bea9b-b9c3-4a31-92b1-f04da39f9db1,cluster,CL.0059,agreed,Matches verb number to the subject.
+standard-english,908bea9b-b9c3-4a31-92b1-f04da39f9db1,cluster,CL.0144,agreed,Removes prepositional phrases to find the true subject.
+standard-english,908bea9b-b9c3-4a31-92b1-f04da39f9db1,sub_skill,FSS.1,agreed,Summary: solves a subject-verb agreement question with the 'odd one out' trick.
+standard-english,91b24055-89f4-48a4-8bd9-e8670dde70ab,cluster,CL.0129,agreed,"Determines the second part is not a complete sentence, ruling out semicolons."
+standard-english,91b24055-89f4-48a4-8bd9-e8670dde70ab,cluster,CL.0149,agreed,Places punctuation around the transition based on clause structure.
+standard-english,91b24055-89f4-48a4-8bd9-e8670dde70ab,sub_skill,BND.2,agreed,"Summary: second part is a dependent phrase, so commas are required instead of semicolons."
+standard-english,9772f66b-3e83-4076-9050-e21a40d60173,cluster,CL.0059,agreed,Matches verb number to the true subject.
+standard-english,9772f66b-3e83-4076-9050-e21a40d60173,cluster,CL.0144,agreed,Skips an intervening participle phrase to find the head subject.
+standard-english,9772f66b-3e83-4076-9050-e21a40d60173,sub_skill,FSS.1,agreed,Summary: subject-verb agreement question with an intervening participle phrase.
+standard-english,97f311ce-cae6-4602-b21a-032970cfa917,cluster,CL.0066,agreed,Worked example places a comma between an introductory clause and the main clause.
+standard-english,97f311ce-cae6-4602-b21a-032970cfa917,sub_skill,BND.2,agreed,Summary: worked example using a comma to set off an introductory clause before the main subject.
+standard-english,9b8eefde-18fe-405c-beb9-71d451429c2f,cluster,CL.0048,agreed,Picks a legal hard joiner between two complete sentences.
+standard-english,9b8eefde-18fe-405c-beb9-71d451429c2f,cluster,CL.0129,agreed,Tests both sides as independent clauses.
+standard-english,9b8eefde-18fe-405c-beb9-71d451429c2f,sub_skill,BND.1,agreed,Summary: identifies two independent clauses that require hard punctuation.
+standard-english,9e14da15-1170-4bae-9142-8668dbcf5168,cluster,CL.0065,agreed,Upgrades list separators to semicolons when items contain commas.
+standard-english,9e14da15-1170-4bae-9142-8668dbcf5168,sub_skill,BND.4,agreed,Summary: semicolons separate items in complex lists with internal punctuation.
+standard-english,a1485312-294d-45b3-a2cf-0d5977218583,cluster,CL.0129,agreed,Ties the hard/soft choice to whether each side is an independent clause.
+standard-english,a1485312-294d-45b3-a2cf-0d5977218583,sub_skill,BND.1,agreed,Summary: hard punctuation categories relate to independent clauses.
+standard-english,a1485312-294d-45b3-a2cf-0d5977218583,sub_skill,BND.2,agreed,Summary: soft punctuation category explained for non-independent parts.
+standard-english,ac354045-cfaa-4109-9dbf-04cef149eac4,cluster,CL.0067,agreed,Puts the noun the modifier describes right after it.
+standard-english,ac354045-cfaa-4109-9dbf-04cef149eac4,sub_skill,FSS.5,agreed,Summary: modifier questions solved by matching the subject to the modifier ('front flip trick').
+standard-english,af950c15-9e1e-4a7f-87a6-5078623a168a,cluster,CL.0059,agreed,Matches verb number to a gerund subject.
+standard-english,af950c15-9e1e-4a7f-87a6-5078623a168a,sub_skill,FSS.1,agreed,Summary: subject-verb agreement question where the subject is a gerund.
+standard-english,b2638103-b8cd-4b66-8aba-66070f59f725,cluster,CL.0059,agreed,Matches verb number to the identified subject.
+standard-english,b2638103-b8cd-4b66-8aba-66070f59f725,cluster,CL.0144,adjudicated,Summary: practice identifying the subject before matching verb number; presenter crosses out prepositional phrases to isolate 'A study'.
+standard-english,b2638103-b8cd-4b66-8aba-66070f59f725,sub_skill,FSS.1,agreed,Summary: identifying the subject and matching verb number on a third question.
+standard-english,b7c21e70-00a4-4109-b551-4c795c54d32e,cluster,CL.0059,agreed,Matches verb number to the delayed subject.
+standard-english,b7c21e70-00a4-4109-b551-4c795c54d32e,cluster,CL.0144,agreed,Finds the delayed subject in an inverted structure.
+standard-english,b7c21e70-00a4-4109-b551-4c795c54d32e,sub_skill,FSS.1,agreed,Summary: subject-verb agreement with an inverted subject-verb structure.
+standard-english,bb99ed9a-7ff0-4ea5-b2cc-49053fcc0f3a,cluster,CL.0141,agreed,Summary: solves a relevance question by linking back to the earlier 'Rosa Parks' comparison the sentence connects to.
+standard-english,bbadda28-7b2a-4689-82a0-f5200eb9ed48,cluster,CL.0048,agreed,Treats period and semicolon as interchangeable joiners of complete sentences.
+standard-english,bbadda28-7b2a-4689-82a0-f5200eb9ed48,sub_skill,BND.1,agreed,"Summary: 'Semicolon Equals Period' rule for joining clauses, used to eliminate identical choices."
+standard-english,bc30f622-9185-4c5a-b619-179d315fea04,cluster,CL.0048,agreed,"Treats semicolon like a period between complete sentences, eliminating identical choices."
+standard-english,bc30f622-9185-4c5a-b619-179d315fea04,sub_skill,BND.1,agreed,"Summary: semicolons connect two complete sentences, acting like a period."
+standard-english,bee8177a-b081-4255-aa1c-45b91521cf91,cluster,CL.0108,agreed,Colon only after a full sentence to introduce a list or example.
+standard-english,bee8177a-b081-4255-aa1c-45b91521cf91,sub_skill,BND.4,agreed,"Summary: colons introduce lists, cliffhangers or examples after a full sentence."
+standard-english,c10dfe42-bfcc-4253-838d-f560ff2170ce,cluster,CL.0048,agreed,Semicolon as a period-equivalent joiner of complete sentences.
+standard-english,c10dfe42-bfcc-4253-838d-f560ff2170ce,sub_skill,BND.1,agreed,Summary: semicolons join independent clauses like periods.
+standard-english,c4d40cf2-a6a5-46e0-ae63-e8e5ec91da61,cluster,CL.0048,agreed,Rejects the comma splice and joins two complete sentences with a period.
+standard-english,c4d40cf2-a6a5-46e0-ae63-e8e5ec91da61,cluster,CL.0129,agreed,Identifies both sides as independent clauses before choosing the period.
+standard-english,c4d40cf2-a6a5-46e0-ae63-e8e5ec91da61,sub_skill,BND.1,agreed,Summary: worked example avoiding a comma splice by using a period between two independent clauses.
+standard-english,c686383d-c534-4860-a314-596e515ddf68,cluster,CL.0066,agreed,Separates the trailing modifier from the main clause with a comma.
+standard-english,c686383d-c534-4860-a314-596e515ddf68,cluster,CL.0129,agreed,Rules out hard punctuation because the second part is not a sentence.
+standard-english,c686383d-c534-4860-a314-596e515ddf68,sub_skill,BND.2,agreed,Summary: eliminates period/semicolon options and identifies a trailing modifier.
+standard-english,c7330688-3a9f-4add-bd76-ef04908bc953,cluster,CL.0059,agreed,Matches verb number to the true subject.
+standard-english,c7330688-3a9f-4add-bd76-ef04908bc953,cluster,CL.0144,agreed,Skips an intervening relative clause to find the head subject.
+standard-english,c7330688-3a9f-4add-bd76-ef04908bc953,sub_skill,FSS.1,agreed,Summary: subject-verb agreement question with an intervening relative clause.
+standard-english,c7dadd7b-f81e-458f-ba65-12011869ae67,cluster,CL.0067,agreed,"Places the noun the modifier describes right after it, rejecting passive traps."
+standard-english,c7dadd7b-f81e-458f-ba65-12011869ae67,sub_skill,FSS.5,agreed,Summary: subject-modifier placement question with passive voice traps.
+standard-english,c9d6f153-5433-49fc-8f9a-abea8b882b9d,cluster,CL.0059,agreed,Matches verb number to the true subject.
+standard-english,c9d6f153-5433-49fc-8f9a-abea8b882b9d,cluster,CL.0144,agreed,Skips an intervening appositive phrase to find the head subject.
+standard-english,c9d6f153-5433-49fc-8f9a-abea8b882b9d,sub_skill,FSS.1,agreed,Summary: subject-verb agreement question with an intervening appositive phrase.
+standard-english,cf0fe8df-23f3-46d8-a768-3d9da08e8795,cluster,CL.0059,agreed,Matches the verb to a singular subject.
+standard-english,cf0fe8df-23f3-46d8-a768-3d9da08e8795,sub_skill,FSS.1,agreed,Summary: subject-verb agreement question with a simple singular subject.
+standard-english,d1e42494-30bb-4ddd-8466-6a862c1342e3,cluster,CL.0143,agreed,Identifies that the two parts contrast before picking 'however'.
+standard-english,d1e42494-30bb-4ddd-8466-6a862c1342e3,sub_skill,TRN.1,agreed,Summary: transition question identifying a contrast relationship and choosing 'however'.
+standard-english,d679e84e-9500-466e-9d2e-f06b54f824c6,cluster,CL.0048,agreed,Teaches period and semicolon as equivalent legal joiners of complete sentences.
+standard-english,d679e84e-9500-466e-9d2e-f06b54f824c6,sub_skill,BND.1,agreed,Summary: semicolons and periods both join independent clauses.
+standard-english,d73abf51-6f2c-433c-9beb-cb1c99220cc8,cluster,CL.0065,agreed,Shows no comma between just two coordinated elements joined by 'and'.
+standard-english,d73abf51-6f2c-433c-9beb-cb1c99220cc8,cluster,CL.0129,adjudicated,Summary: no comma before 'and' because the two coordinated elements are not independent clauses; the decision rests on testing each side for a complete clause.
+standard-english,d73abf51-6f2c-433c-9beb-cb1c99220cc8,sub_skill,BND.3,agreed,Summary: worked example showing no comma is needed when coordinating two non-independent elements with 'and'.
+standard-english,e92b9b4f-c6ed-472b-9c7b-2e256378d5bb,cluster,CL.0211,agreed,Chooses present perfect from an action continuing to the present.
+standard-english,e92b9b4f-c6ed-472b-9c7b-2e256378d5bb,sub_skill,FSS.2,agreed,Summary: present perfect for actions continuing to the present.
+standard-english,efc3350e-998d-4286-a34b-3517022e6cab,cluster,CL.0129,adjudicated,Summary: colon/dash punctuation question solved by checking whether the words at the mark form an independent clause.
+standard-english,f9421616-3b80-465c-9c7f-6a56816ac7cb,cluster,CL.0066,agreed,Trailing phrase is separated from the main clause with soft punctuation.
+standard-english,f9421616-3b80-465c-9c7f-6a56816ac7cb,cluster,CL.0129,agreed,"Determines the second part is a phrase, not a complete sentence."
+standard-english,f9421616-3b80-465c-9c7f-6a56816ac7cb,sub_skill,BND.2,agreed,"Summary: soft punctuation is needed because the second part is a phrase, not a clause."
+standard-english,fa391b6b-1156-4c36-82d7-36f7d3bb9d69,cluster,CL.0048,agreed,Covers comma coordination of clauses.
+standard-english,fa391b6b-1156-4c36-82d7-36f7d3bb9d69,cluster,CL.0065,agreed,Covers list commas.
+standard-english,fa391b6b-1156-4c36-82d7-36f7d3bb9d69,cluster,CL.0085,agreed,"Covers dashes, parentheses and commas around non-essential info."
+standard-english,fa391b6b-1156-4c36-82d7-36f7d3bb9d69,sub_skill,BND.1,agreed,Summary: commas in clause coordination.
+standard-english,fa391b6b-1156-4c36-82d7-36f7d3bb9d69,sub_skill,BND.2,agreed,"Summary: dashes, parentheses and commas for non-essential information."
+standard-english,fa391b6b-1156-4c36-82d7-36f7d3bb9d69,sub_skill,BND.4,agreed,Summary: commas in lists.
