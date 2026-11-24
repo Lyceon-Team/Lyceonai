@@ -19,7 +19,9 @@
 # Week ready message, recaption touches only a delivered week, the daily job retired; T55 the same
 # day's ruling: the key on the scheduled run or a manual run from main, never any other branch;
 # T56-T57 the same day's ruling: the captions inline, one threaded reply per day;
-# T58-T60 Karl's cover-card ruling (same day): the cover card and its 4:5 zone;
+# T58-T60 Karl's cover-card ruling (same day): the cover card and its 4:5 zone; T61-T67 Karl's fix
+# of the same day: separate equations on separate lines (the card's rendering, E1, E2); T68-T73
+# Karl's YouTube Shorts block of the same day (from W48, no answer, the youtube/shorts link);
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -46,6 +48,8 @@ BACKUPS="$(mktemp -d /tmp/we-mut.XXXX)"
 FILES=(
   "$MIG"
   "shared/worked-examples/rules.ts"
+  "shared/qotd/plain-math.ts"
+  "shared/social/funnel.ts"
   "scripts/worked-examples/approval.ts"
   "scripts/worked-examples/composition.ts"
   "video-kit/worked-examples/templates/end-card.html"
@@ -436,6 +440,45 @@ ts_plant "T59 a worked example without its cover card" scripts/worked-examples/c
 ts_plant "T60 the cover zone is TikTok's safe area, not the 4:5 crop" scripts/worked-examples/composition.ts \
   '    top: Math.max(top, safe.top),' '    top: safe.top,' \
   "the cover card opens the video for 0.4 s with the brand, the topic and the hook line; the voice is not delayed (Karl, 2026-11-14)"
+ts_plant "T61 a display equation is written inline again (the W47 Monday card)" shared/qotd/plain-math.ts \
+  '      out += `\n${latexToPlain(token.content, superscripts)}\n`;' '      out += latexToPlain(token.content, superscripts);' \
+  "the card draws each equation on a line of its own"
+ts_plant "T62 the question card draws the stem flattened" scripts/worked-examples/composition.ts \
+  '      stem: escapeHtml(cardText(question.stem)),' '      stem: escapeHtml(plainMathText(question.stem)),' \
+  "the card draws each equation on a line of its own"
+ts_plant "T67 the recap draws the stem flattened" scripts/worked-examples/composition.ts \
+  '  const recap = `<div class="recap"><div class="stem">${escapeHtml(cardText(question.stem))}</div>' '  const recap = `<div class="recap"><div class="stem">${escapeHtml(plainMathText(question.stem))}</div>' \
+  "the card draws each equation on a line of its own"
+ts_plant "T63 E1 never refuses" shared/worked-examples/rules.ts \
+  '        if (!lines.some((l) => l === shown || l.slice(0, -1) === shown))' '        if (lines.length < 0)' \
+  "E1 refuses the flattened rendering that ran the equations together"
+ts_plant "T64 E2 lets an equation run into the words before it" shared/worked-examples/rules.ts \
+  '      if (before !== undefined && !OPENS_EQUATION.test(before))' '      if (before === "\u0000")' \
+  "E2 refuses an inline equation run into the words before it, after it, or the next equation"
+ts_plant "T65 E2 lets two equations share a line with only a space between" shared/worked-examples/rules.ts \
+  '        text.slice(previous.end, token.rawStart).trim() === ""' '        text.slice(previous.end, token.rawStart) === "never"' \
+  "E2 refuses an inline equation run into the words before it, after it, or the next equation"
+ts_plant "T66 the script check skips the equation layout" shared/worked-examples/rules.ts \
+  '  out.push(...equationLayoutProblems(q));' '' \
+  "every script is checked: a run-on stem refuses the example"
+ts_plant "T68 the YouTube block before W48" shared/worked-examples/rules.ts \
+  '  return postOn >= YOUTUBE_SHORTS_FROM;' '  return true;' \
+  "Y1 from Monday of W48 every post carries it; W47 and earlier carry none"
+ts_plant "T69 the Shorts link without utm_medium=shorts" shared/social/funnel.ts \
+  '  return `https://${startLink("youtube", campaign, YOUTUBE_SHORTS_MEDIUM)}`;' '  return `https://${startLink("youtube", campaign)}`;' \
+  "Y2 the title is the headline plus #Shorts"
+ts_plant "T70 the day's reply drops the YouTube block" scripts/worked-examples/post-to-slack.ts \
+  '  if (set.youtube_title !== undefined && set.youtube_description !== undefined)' '  if (set.youtube_title === "never")' \
+  "Y4 each day's reply carries it as two copy blocks"
+ts_plant "T71 the YouTube block may give the answer" shared/worked-examples/rules.ts \
+  '    const a = hookAnswerProblem(text, q);' '    const a: string | null = text === q.id ? "" : null;' \
+  "Y3 no answer and no other link"
+ts_plant "T72 captions.md keeps Slack's escaping (the link reads &amp;)" scripts/worked-examples/weekly.ts \
+  '  return unescapeMrkdwn(captionsMarkdown(post));' '  return captionsMarkdown(post);' \
+  "Y4 each day's reply carries it as two copy blocks"
+ts_plant "T73 the description may drop the tagged link" shared/worked-examples/rules.ts \
+  '  if (links !== 1)' '  if (links > 1)' \
+  "Y3 no answer and no other link"
 # T50 re-pointed 2026-11-14: workedExampleCopy now takes the topic from titleTopic.
 ts_plant "T50 the captions show the College Board skill name again" scripts/worked-examples/daily.ts \
   '  const { topic } = chosen;' '  const topic = e.content.skill_code;' \

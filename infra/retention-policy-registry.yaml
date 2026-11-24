@@ -35,7 +35,7 @@
 #
 # trade-offs:
 #  - `canonical_owner_doc_and_section` cites the PUBLISHED privacy policy
-#    (`legal/privacy-policy/v6/en.md §6.x`) for every period the policy is
+#    (`legal/privacy-policy/v7/en.md §6.x`) for every period the policy is
 #    what publishes, and a `docs/Spec` section only where a spec section is
 #    the owner of the number. §9.2 rule 2 requires the citation to resolve to
 #    "a referenced doc + § anchor"; the published policy is a versioned,
@@ -96,7 +96,7 @@ retention_policies:
   # One definition, and the sweep reads it.
   - policy_id: RPOL-NOTIF-01
     pii_surface_name: 'notification_messages.body'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.1'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.1'
     classification: content
     retention_horizon_months: null
     calendar_month_semantics: null
@@ -118,7 +118,7 @@ retention_policies:
   # permanently empty — which is why v3 could not publish this sentence.
   - policy_id: RPOL-LISA-01
     pii_surface_name: 'tutor_conversations.body'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.1'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.1'
     classification: content
     retention_horizon_months: null
     calendar_month_semantics: null
@@ -137,7 +137,7 @@ retention_policies:
   # This is the §9.1 `doc01v6_t_plus_7` substrate.
   - policy_id: RPOL-DELETE-01
     pii_surface_name: 'account_deletion_requests.subject_email'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.2'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.2'
     classification: identifier
     retention_horizon_months: null
     calendar_month_semantics: null
@@ -158,7 +158,7 @@ retention_policies:
   # tiers with the single 24-month strip this row encodes.
   - policy_id: RPOL-DELETE-02
     pii_surface_name: 'deletion_request_log.subject_email'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.2'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.2'
     classification: identifier
     retention_horizon_months: 24
     calendar_month_semantics: true
@@ -180,7 +180,7 @@ retention_policies:
   # fields and the token are null, as RPOL-CONFIG-01.
   - policy_id: RPOL-CONSENT-01
     pii_surface_name: 'deletion_consent_evidence.minor'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.2'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.2'
     classification: pii
     retention_horizon_months: null
     calendar_month_semantics: null
@@ -202,7 +202,7 @@ retention_policies:
   # test now.
   - policy_id: RPOL-BILLING-01
     pii_surface_name: 'deletion_billing_record.stripe_customer_id'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.2'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.2'
     classification: identifier
     retention_horizon_months: null
     calendar_month_semantics: null
@@ -222,7 +222,7 @@ retention_policies:
   # my payment data" deserves a number rather than a pointer to a vendor.
   - policy_id: RPOL-BILLING-02
     pii_surface_name: 'stripe.customer.billing_details'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.2'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.2'
     classification: pii
     retention_horizon_months: null
     calendar_month_semantics: null
@@ -247,7 +247,7 @@ retention_policies:
   # which §9.3 (i) fails. No token is invented to silence it.
   - policy_id: RPOL-SUPPRESS-01
     pii_surface_name: 'resend.suppression.email'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.2'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.2'
     classification: identifier
     retention_horizon_months: null
     calendar_month_semantics: null
@@ -271,7 +271,7 @@ retention_policies:
   # runs differently from §6.2's, and the registry cannot yet say so.
   - policy_id: RPOL-CONSENT-02
     pii_surface_name: 'legal_acceptances.billing_terms'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.3'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.3'
     classification: pii
     retention_horizon_months: 36
     calendar_month_semantics: true
@@ -294,7 +294,7 @@ retention_policies:
   # widened.
   - policy_id: RPOL-AUDIT-01
     pii_surface_name: 'audit_logs.target_profile_id'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.5'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.5'
     classification: operational
     retention_horizon_months: null
     calendar_month_semantics: null
@@ -334,7 +334,7 @@ retention_policies:
   # missing value.
   - policy_id: RPOL-CONFIG-01
     pii_surface_name: 'auth_runtime_config_history.changed_by_profile_id'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.5'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.5'
     classification: operational
     retention_horizon_months: null
     calendar_month_semantics: null
@@ -399,7 +399,7 @@ retention_policies:
   # first (recorded in docs/plans/seo/seo-marketing-vertical.md, SCL-220).
   - policy_id: RPOL-ANALYTICS-03
     pii_surface_name: 'posthog.events'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.6'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.6'
     classification: analytics
     retention_horizon_months: 12
     calendar_month_semantics: true
@@ -418,7 +418,7 @@ retention_policies:
   # in this repo reads or asserts it. Replay per R32 / SCL-204.
   - policy_id: RPOL-ANALYTICS-05
     pii_surface_name: 'posthog.session_recordings'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.6'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.6'
     classification: analytics
     retention_horizon_months: null
     calendar_month_semantics: null
@@ -474,7 +474,7 @@ retention_policies:
   # enumerated categories. SCL-101 records that.
   - policy_id: RPOL-OPS-01
     pii_surface_name: 'tutor_context_resolution_log.student_id'
-    canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.7'
+    canonical_owner_doc_and_section: 'legal/privacy-policy/v7/en.md §6.7'
     classification: operational
     retention_horizon_months: null
     calendar_month_semantics: null

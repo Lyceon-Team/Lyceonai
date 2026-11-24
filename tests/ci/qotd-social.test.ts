@@ -27,6 +27,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { QotdSocialCard } from "@/components/qotd/QotdSocialCard";
 import { QotdTiktokSlide } from "@/components/qotd/QotdTiktokSlide";
+import { StaticMath } from "@/components/qotd/StaticMath";
 import {
   previousQotdDate,
   qotdSocialInputSchema,
@@ -48,6 +49,7 @@ import {
   socialInputFromToday,
   socialInputProblems,
   speakMixedText,
+  mathForms,
   tiktokCarouselLeaks,
 } from "../../shared/qotd/social";
 import {
@@ -78,6 +80,7 @@ import {
   capTiktokTitle,
   tiktokSafePx,
   tiktokWhy,
+  visibleWhyLength,
   QOTD_TIKTOK_WHY_MORE,
 } from "../../shared/qotd/tiktok";
 import { QOTD_TIKTOK_CSS } from "@/components/qotd/QotdTiktokSlide";
@@ -1784,6 +1787,193 @@ describe("TikTok carousel: yesterday's question only (Karl, 2026-10-23)", () => 
   });
 });
 
+describe("maths that reads like maths (Karl, 2026-11-16): Unicode powers in text, KaTeX on the slide, leaks caught in every form", () => {
+  it("plain text writes powers as superscripts, with ^(…) only where none exists, and keeps the old form on request", () => {
+    const cases: [string, string, string][] = [
+      ["$x^{2}+1$", "x² + 1", "x^2 + 1"],
+      ["$x^3$", "x³", "x^3"],
+      ["$2^{n}$", "2ⁿ", "2^n"],
+      ["$x^{-1}$", "x⁻¹", "x^(-1)"],
+      ["$10^{-3}$", "10⁻³", "10^(-3)"],
+      ["$x^{k+1}$", "x^(k + 1)", "x^(k + 1)"],
+      ["$90^\\circ$", "90°", "90°"],
+    ];
+    for (const [latex, now, before] of cases) {
+      expect(plainMathText(latex), latex).toBe(now);
+      expect(plainMathText(latex, { superscripts: false }), latex).toBe(before);
+    }
+    expect(mathForms("$x^{2}+1$")).toEqual([
+      "$x^{2}+1$",
+      "x² + 1",
+      "x^2 + 1",
+      "x squared +1",
+    ]);
+  });
+
+  it("slide 3 typesets the Why with KaTeX: its maths stays as written, never flattened to x^2", () => {
+    const day = archiveDay("2026-10-04");
+    const withPowers: QotdArchiveResponse = {
+      ...day,
+      question: {
+        ...day.question,
+        explanation:
+          "Square both sides, so $x^{2} = 49$ and $x = 7$. The negative root is ruled out because $x > 0$.",
+      },
+    };
+    const built = buildTiktokCarousel(withPowers, "2026-10-05");
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.carousel.why).toBe(withPowers.question.explanation);
+    const markup = renderToStaticMarkup(
+      createElement(QotdTiktokSlide, {
+        slide: 3,
+        carousel: built.carousel,
+        logoSrc: "logo.png",
+      }),
+    );
+    const why = markup.slice(markup.indexOf('class="tt-why"'));
+    expect(why).toContain('class="katex"');
+    expect(why).not.toContain("x^2");
+    expect(why).not.toContain("$x");
+    // The viewer reads it as maths: the visible text has x and 2 apart, and no caret.
+    expect(slideText(built.carousel, 3)).not.toContain("^");
+  });
+
+  describe("leak checks catch a power in the source, either plain form, or as KaTeX draws it", () => {
+    const correctId = TODAY_REVEALED.question.correct_option_id;
+    const powered: QotdArchiveResponse = {
+      ...TODAY_REVEALED,
+      question: {
+        ...TODAY_REVEALED.question,
+        options: TODAY_REVEALED.question.options.map((o) =>
+          o.id === correctId ? { ...o, text: "$x^{2}+1$" } : o,
+        ),
+        explanation:
+          "Square the side first so the area is $x^{2}+1$ and each corner then adds $2^{n}$ more to the total length of the fence.",
+      },
+    };
+    const slides = (): string[] =>
+      ([1, 2, 3] as const).map((n) =>
+        slideText(carouselOf(YESTERDAY, QOTD_FIXTURE_TODAY), n),
+      );
+    const leaksOf = (s: string[]) =>
+      tiktokCarouselLeaks(
+        { slides: s, caption: TIKTOK_CAPTION },
+        yesterdayDay(),
+        {
+          input: socialInputFromArchive(TODAY_REVEALED),
+          revealed: powered,
+        },
+      );
+    // The KaTeX forms are real output. Server-rendered: StaticMath's markup, read as a card is read.
+    const katexDrawn = visibleText(
+      renderToStaticMarkup(createElement(StaticMath, { content: "$x^{2}+1$" })),
+    );
+    // In Chromium, a slide's innerText (what generate.ts hands the leak check) carries KaTeX's
+    // MathML copy in maths italic, then the drawn text: captured 2026-11-16 from
+    // katex.renderToString("x^{2}+1") in the pipeline's headless Chromium (QOTD_SOCIAL_CHROMIUM).
+    const chromiumDrawn = "𝑥\n2\n+\n1\nx2+1";
+
+    it("presence before absence: the clean slides pass, and the forms really differ", () => {
+      expect(leaksOf(slides())).toEqual([]);
+      expect(
+        new Set(["x² + 1", "x^2 + 1", katexDrawn, chromiumDrawn]).size,
+      ).toBe(4);
+      expect(katexDrawn).toContain("2");
+      expect(chromiumDrawn).toContain("𝑥");
+    });
+
+    it.each([
+      ["superscripts (x² + 1)", "x² + 1"],
+      ["the old form (x^2 + 1)", "x^2 + 1"],
+      ["the source ($x^{2}+1$)", "$x^{2}+1$"],
+    ])("today's correct choice in %s on slide 3 is a leak", (_, form) => {
+      const s = slides();
+      s[2] = `${s[2]} ${form}`;
+      expect(leaksOf(s)).toContain(
+        'tiktok slide 3: names today\'s correct choice "$x^{2}+1$"',
+      );
+    });
+
+    it.each([
+      ["server-rendered", () => katexDrawn],
+      ["in Chromium (maths italic)", () => chromiumDrawn],
+    ])(
+      "today's correct choice as KaTeX draws it (%s) on a slide is a leak",
+      (_, drawn) => {
+        const s = slides();
+        s[2] = `${s[2]} ${drawn()}`;
+        expect(leaksOf(s)).toContain(
+          'tiktok slide 3: names today\'s correct choice "$x^{2}+1$"',
+        );
+      },
+    );
+
+    it.each([
+      ["superscripts", (t: string) => plainMathText(t)],
+      [
+        "the old form",
+        (t: string) => plainMathText(t, { superscripts: false }),
+      ],
+    ])("today's explanation in %s on slide 3 is a leak", (_, form) => {
+      const s = slides();
+      s[2] = `${s[2]} ${form(powered.question.explanation)}`;
+      expect(
+        leaksOf(s).some((l) =>
+          l.startsWith("tiktok slide 3: carries today's explanation"),
+        ),
+      ).toBe(true);
+    });
+
+    it("a superscript is read as the power it is: x² + 1 on a slide does not name a correct choice of x + 1", () => {
+      const plainChoice: QotdArchiveResponse = {
+        ...powered,
+        question: {
+          ...powered.question,
+          options: powered.question.options.map((o) =>
+            o.id === correctId ? { ...o, text: "$x+1$" } : o,
+          ),
+        },
+      };
+      const s = slides();
+      s[2] = `${s[2]} x² + 1`;
+      const leaks = tiktokCarouselLeaks(
+        { slides: s, caption: TIKTOK_CAPTION },
+        yesterdayDay(),
+        {
+          input: socialInputFromArchive(TODAY_REVEALED),
+          revealed: plainChoice,
+        },
+      );
+      expect(leaks).not.toContain(
+        'tiktok slide 3: names today\'s correct choice "$x+1$"',
+      );
+      // Presence: the same slide with x + 1 itself is a leak.
+      s[2] = `${s[2]} x + 1`;
+      expect(
+        tiktokCarouselLeaks(
+          { slides: s, caption: TIKTOK_CAPTION },
+          yesterdayDay(),
+          {
+            input: socialInputFromArchive(TODAY_REVEALED),
+            revealed: plainChoice,
+          },
+        ),
+      ).toContain('tiktok slide 3: names today\'s correct choice "$x+1$"');
+    });
+
+    it("the Instagram caption and caption: the correct choice in superscripts is a leak", () => {
+      const out = outputs(socialInputFromArchive(powered));
+      expect(socialAssetLeaks(out, powered)).toEqual([]);
+      const leaks = socialAssetLeaks(
+        { ...out, caption: `${out.caption}\n\nHint: x² + 1` },
+        powered,
+      );
+      expect(leaks).toContain('caption: names the correct choice "$x^{2}+1$"');
+    });
+  });
+});
+
 describe("TikTok carousel: never today's answer (leak checks over all three slides, the caption and the title)", () => {
   const source = (): Source => ({
     kind: "past",
@@ -2114,11 +2304,18 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
       expect(why).not.toBeNull();
       if (why === null) continue;
       const plain = plainMathText(explanation).replace(/\s+/g, " ").trim();
-      expect(why.length).toBeLessThanOrEqual(QOTD_TIKTOK_WHY_MAX);
+      // The Why keeps its maths as written for KaTeX (Karl, 2026-11-16); what the viewer reads is
+      // its plain text, and that is what the 300 characters and the sentence checks are about.
+      // Every maths token is whole: the Why tokenizes to the explanation's own maths, no fragment.
+      const shown = plainMathText(why);
+      expect(shown.length).toBeLessThanOrEqual(QOTD_TIKTOK_WHY_MAX);
+      expect(visibleWhyLength(why)).toBe(shown.length);
+      for (const m of why.matchAll(/\$[^$]+\$/g))
+        expect(explanation).toContain(m[0]);
       if (why.endsWith(QOTD_TIKTOK_WHY_MORE)) {
         // A first sentence over 300 characters, cut at a word boundary.
         cut += 1;
-        const head = why.slice(0, -QOTD_TIKTOK_WHY_MORE.length);
+        const head = shown.slice(0, -QOTD_TIKTOK_WHY_MORE.length);
         expect(plain.startsWith(head)).toBe(true);
         expect(plain[head.length]).toMatch(/[\s,;:—–-]/);
         continue;
@@ -2126,12 +2323,12 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
       // Whole sentences: terminal punctuation, and the plain text continues (if at all) with a
       // space after exactly this prefix.
       whole += 1;
-      expect(why).toMatch(/[.!?]["”’)]*$/);
-      expect(plain.startsWith(why.replace(/\.$/, "")) || plain === why).toBe(
-        true,
-      );
-      const rest = plain.slice(why.length);
-      expect(rest === "" || rest.startsWith(" ") || `${plain}.` === why).toBe(
+      expect(shown).toMatch(/[.!?]["”’)]*$/);
+      expect(
+        plain.startsWith(shown.replace(/\.$/, "")) || plain === shown,
+      ).toBe(true);
+      const rest = plain.slice(shown.length);
+      expect(rest === "" || rest.startsWith(" ") || `${plain}.` === shown).toBe(
         true,
       );
     }
@@ -2143,7 +2340,7 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
   it("the Why line never splits a decimal and stops at three sentences", () => {
     expect(
       tiktokWhy("The mean is 3.5 here. So $x = 2$. Done! A fourth one."),
-    ).toBe("The mean is 3.5 here. So x = 2. Done!");
+    ).toBe("The mean is 3.5 here. So $x = 2$. Done!");
     const two = tiktokWhy(`First one. ${"long ".repeat(70)}tail. Third.`);
     expect(two).toBe("First one.");
   });

@@ -32,6 +32,7 @@ import { logger } from "../logger";
 import type { ReviewIntent } from "../../packages/shared/src/tutor-guided-choices";
 import type { HelpState } from "../../packages/shared/src/tutor-help-level";
 import type { Layer2Outcome } from "./tutor-crisis";
+import type { TurnOutcome } from "./tutor-attribution";
 
 // ---------------------------------------------------------------------------
 // Types — exported for route-handler / orchestrator consumers
@@ -39,7 +40,8 @@ import type { Layer2Outcome } from "./tutor-crisis";
 
 export type ContextResolutionLog = {
   conversationId: string;
-  turnOrdinal: number;
+  /** 0-based turn of the conversation; null when not known (owner brief 2026-11-22). */
+  turnOrdinal: number | null;
   contextVersion: string;
   memorySummariesCount: number;
   recentMessagesCount: number;
@@ -60,9 +62,28 @@ export type ContextResolutionLog = {
  */
 export type TurnMetricsLog = {
   conversationId: string;
-  turnOrdinal: number;
+  /**
+   * @spec [owner brief "attribution", Karl 2026-11-22] | @implemented [2026-11-22]
+   * Which turn of the conversation, 0-based (tutor-attribution.ts `readTurnOrdinal`); null when
+   * it is not known (an exit before the count, or a count that could not be read), never 0.
+   */
+  turnOrdinal: number | null;
   orchestrationDurationMs: number;
-  modelName: string;
+  /**
+   * @spec [LISA closure plan W4-12; owner brief "attribution", Karl 2026-11-22]
+   * | @implemented [2026-11-22]
+   * The provider model the worker answered with; null when no model answered. Never an outcome
+   * code: how the turn ended is `outcome`.
+   */
+  modelName: string | null;
+  /** How the turn ended (W4-12): its own column, `turn_outcome`. */
+  outcome: TurnOutcome;
+  /**
+   * @spec [Doc-03D_V1.2 §8.1; LISA closure plan W4-14] | @implemented [2026-11-22]
+   * sha256 of the request sent to the worker (tutor-attribution.ts `contextHash`); null when no
+   * request was built.
+   */
+  contextHash: string | null;
   /**
    * @spec [owner brief "Per-turn attribution" (Karl, 2026-10-27) and rulings; SCL-246; Doc 03 §24]
    * | @implemented [2026-10-27]
@@ -208,6 +229,8 @@ export async function logTurnMetrics(params: TurnMetricsLog): Promise<void> {
       turn_ordinal: params.turnOrdinal,
       orchestration_duration_ms: params.orchestrationDurationMs,
       model_name: params.modelName,
+      turn_outcome: params.outcome,
+      context_hash: params.contextHash,
       tokens_in: params.tokensIn,
       tokens_out: params.tokensOut,
       thinking_tokens: params.thinkingTokens,
@@ -266,6 +289,7 @@ export async function logTurnMetrics(params: TurnMetricsLog): Promise<void> {
         conversationId: params.conversationId,
         turnOrdinal: params.turnOrdinal,
         modelName: params.modelName,
+        outcome: params.outcome,
         orchestrationDurationMs: params.orchestrationDurationMs,
         crisisClassifierOutcome: params.crisisClassifierOutcome,
         crisisTriggered: params.crisisTriggered,

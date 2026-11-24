@@ -444,6 +444,18 @@ routes:
     prerender: true
     indexable: true
     last_modified: 2026-10-20
+  - path_pattern: /parent
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-11-22
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-11-22
   - path_pattern: /legal
     surface_class: unauth_marketing
     clarity_allowed: false
@@ -476,6 +488,18 @@ routes:
     masking_required: false
     owning_doc: Doc-01
     last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  # a teen claims a guardian's invite (owner rulings 2026-11-21; SCL-282); public, never indexed
+  - path_pattern: /join/:token
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-11-22
     is_internal_api: false
     requires_cloudflare_access: false
     requires_hmac: false

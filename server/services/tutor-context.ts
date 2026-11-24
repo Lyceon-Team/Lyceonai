@@ -44,6 +44,7 @@ import {
   policyAssignmentSchema,
   orchestrateRequestSchema,
   memorySummarySchema,
+  TUTOR_DEFAULT_PROMPT_VERSION,
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import type {
   OrchestrateRequest,
@@ -1465,7 +1466,7 @@ function extractKpiPayload(payload: Record<string, unknown>): {
  *
  * expected outcome: a valid PolicyAssignment for the orchestrator.
  */
-function resolveDefaultPolicy(
+export function resolveDefaultPolicy(
   studentId: string,
   entryMode: string,
 ): z.infer<typeof policyAssignmentSchema> {
@@ -1473,7 +1474,9 @@ function resolveDefaultPolicy(
     policy_family: "instructional_tutor",
     policy_variant: "scaffolded",
     policy_version: "1.0.0",
-    prompt_version: null,
+    // W4-13 (owner brief "attribution", 2026-11-22): the BFF names the prompt version, so the
+    // assignment row written before the model call carries the version the worker runs.
+    prompt_version: TUTOR_DEFAULT_PROMPT_VERSION,
     assignment_mode: "deterministic" as const,
     assignment_key: `${studentId}:${entryMode}`,
     reason_snapshot: {

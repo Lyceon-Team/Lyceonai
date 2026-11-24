@@ -130,6 +130,18 @@ function LoginRoute() {
     </StudentRouteFrame>
   );
 }
+/**
+ * `/join/:token` (owner rulings 2026-11-21; SCL-282): public on purpose. A signed-out teen sees
+ * the invite, and an under-13 student reaches it before the guardian-required redirect. The page
+ * and the server enforce the student role. Bare card, like /login.
+ */
+function JoinRoute({ params }: { params: { token: string } }) {
+  return (
+    <StudentRouteFrame route="/join/:token">
+      <JoinPage params={params} />
+    </StudentRouteFrame>
+  );
+}
 function AccountRecoverRoute() {
   return (
     <StudentRouteFrame route="/account/recover">
@@ -201,6 +213,7 @@ function ProfileRoute(): JSX.Element {
 }
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
 const GuardianRequired = lazy(() => import("@/pages/guardian-required"));
+const JoinPage = lazy(() => import("@/pages/join"));
 
 // SEO Wave 3 (C2): every content page renders through one component, mounted at each path in
 // CONTENT_PAGE_PATHS (the light path list; the copy loads with the page's own chunk).
@@ -220,6 +233,8 @@ const LegalDoc = lazy(() => import("@/pages/legal-doc"));
 const TrustHub = lazy(() => import("@/pages/trust"));
 // Final brief "Trustpilot card + Feedback" (Karl, 2026-10-20) §2: the static contact page.
 const ContactPage = lazy(() => import("@/pages/contact"));
+// Owner brief "/parent page + card-first parent onboarding" (Karl, 2026-11-22), ruling 1.
+const ParentPage = lazy(() => import("@/pages/parent"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const UpgradePage = lazy(() => import("@/pages/upgrade"));
 const CrisisReviewList = lazy(() => import("@/pages/admin/CrisisReviewList"));
@@ -251,6 +266,8 @@ export function Router() {
         {/* Public routes */}
         <Route path="/" component={HomePage} />
         <Route path="/login" component={LoginRoute} />
+        {/* A teen claims a guardian's invite (SCL-282). Public: see JoinRoute. */}
+        <Route path="/join/:token" component={JoinRoute} />
 
         {/* Signup redirects to the auth page on its Sign Up tab (owner brief 2026-10-10 rule 1;
             the URL comes from the shared allowlist). */}
@@ -295,6 +312,7 @@ export function Router() {
         {/* Trust & Legal pages - public */}
         <Route path="/trust" component={TrustHub} />
         <Route path="/contact" component={ContactPage} />
+        <Route path="/parent" component={ParentPage} />
         {/* @spec [owner ruling 2026-09-29, UI-04] | @implemented [2026-09-29] |
             plain English: the old tutor page is retired; /tutor now sends
             everyone to /chat, whose guard handles sign-in (next=/chat). */}
