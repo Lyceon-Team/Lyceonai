@@ -54,6 +54,7 @@
  *   prints the same line with "checked, not written". Run it for every case before importing.
  */
 import { pathToFileURL } from "node:url";
+import { rubricFor, rubricScopeConflict } from "./rubrics";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
@@ -342,6 +343,13 @@ export async function runImport(argv: readonly string[]): Promise<string> {
     item,
     cutoff.created_at,
   );
+  // A rubric written for the other submit state cannot score this cut-off: refuse it here, at
+  // import (owner brief 2026-11-22: G0-2-08 was scored 5/5 FAIL by a before-submission rule on
+  // an answered item). Runs under --check too, before anything is written.
+  const rubric = rubricFor(args.case);
+  const scopeConflict =
+    rubric === null ? null : rubricScopeConflict(rubric, isPostSubmit);
+  if (scopeConflict !== null) throw new Error(scopeConflict);
 
   const scanKey = await getCorrectAnswerForScope(
     conversation.source_question_row_id,

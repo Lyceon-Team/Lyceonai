@@ -1,0 +1,283 @@
+{
+  "skill": "RAT",
+  "skill_name": "Ratios, Rates, Proportional Relationships, and Units",
+  "total_questions": 84,
+  "difficulty_distribution": {
+    "Easy": 39,
+    "Medium": 30,
+    "Hard": 15
+  },
+  "proposed_sub_skills": [
+    {
+      "id": "RAT.1",
+      "name": "Single-Step Linear Unit Conversion",
+      "definition": "Given one explicit conversion factor between two linear units (length, mass, time, volume, or custom units like fathoms/rods), multiply or divide once to convert a quantity from one unit to another. The units are not squared or cubed.",
+      "inclusion_test": "The question provides exactly one conversion factor (e.g., '1 yard = 3 feet' or '1 fathom = 6 feet') and asks the student to convert a single quantity using that one factor. No chaining of multiple conversion factors is required. The units are first-power (not area, volume, or acceleration units). The student's task is a single multiplication or division.",
+      "exclusion_test": "Exclude if the question requires two or more conversion factors applied in sequence, if the units are squared or cubed, or if the core task is rate application (computing total from rate*quantity) rather than unit conversion.",
+      "evidence_ids": [
+        "4e375d1f", "4347a032", "d7a3179d", "c47256ca", "8bf3f67a",
+        "2cdefcb1", "85b33aa8", "d0d9ede4", "ba62b0b0", "0700a2d5",
+        "c81499e1", "aeeaec96", "2d16d62c", "674a4084", "eb672707",
+        "73ddfdac", "ec787383"
+      ],
+      "question_count": 17,
+      "difficulty_spread": { "Easy": 13, "Medium": 4, "Hard": 0 }
+    },
+    {
+      "id": "RAT.2",
+      "name": "Multi-Step (Chained) Unit Conversion",
+      "definition": "Convert a quantity or rate by applying two or more conversion factors in sequence. This includes converting both the numerator and denominator of a rate (e.g., mph to yards/hr requires converting miles to yards AND hours to... wait, mph to yards/hr only changes miles to yards, so that's one step. Let me reconsider. Multi-step means: (a) chaining two given conversion factors (e.g., quarts to cups to fluid ounces), or (b) converting a rate by changing the time/distance unit using a known factor plus converting the quantity unit using a given factor, or (c) any path requiring two or more distinct conversion multiplications.",
+      "inclusion_test": "The solving path requires multiplying or dividing by two or more distinct conversion factors in sequence. At least one conversion factor is given explicitly; another may be a standard factor the student is expected to know (e.g., 60 min = 1 hr, 60 s = 1 min). Examples: converting furlongs to miles via furlongs-to-feet then feet-to-miles; converting posters/min to posters/hr; converting km/hr to m/s.",
+      "exclusion_test": "Exclude if only one conversion factor is needed (single-step). Exclude if the conversion involves squared or cubed units. Exclude if the core task is rate application rather than unit conversion.",
+      "evidence_ids": [
+        "94660ba8", "06a152cd", "3c8fdc40", "568bc2a4", "8917ce38",
+        "89c39d77", "cb4894f9", "fea831fc", "3310c2ab", "d28c29e1",
+        "939c46d1"
+      ],
+      "question_count": 11,
+      "difficulty_spread": { "Easy": 3, "Medium": 8, "Hard": 0 }
+    },
+    {
+      "id": "RAT.3",
+      "name": "Squared and Cubed Unit Conversion",
+      "definition": "Convert units that are raised to a power of 2 or higher. The student must recognize that converting area or acceleration units requires squaring (or cubing) the linear conversion factor, not just applying it once.",
+      "inclusion_test": "The question involves converting a unit that is explicitly squared or cubed (e.g., square yards to square miles, m/s-squared to miles/min-squared, square feet per hour to square meters per minute). The student must square or cube the linear conversion factor as part of the solving process.",
+      "exclusion_test": "Exclude if all units are first-power (linear). Exclude if the question uses area/volume conceptually (e.g., population density per square mile) but does not require converting the area/volume unit itself.",
+      "evidence_ids": [
+        "d6456c7a", "7d093333", "c7c6445f", "e7133228"
+      ],
+      "question_count": 4,
+      "difficulty_spread": { "Easy": 0, "Medium": 0, "Hard": 4 }
+    },
+    {
+      "id": "RAT.4",
+      "name": "Setting Up and Solving Proportions",
+      "definition": "Given a stated ratio a:b (or equivalent fraction a/b) and one known value, set up a proportion a/b = c/d and solve for the unknown. Includes reading a constant ratio from a table, simplifying ratios, and maintaining equivalent ratios across scaled quantities.",
+      "inclusion_test": "The question states or implies a ratio between two quantities of the same type (or dimensionless) and asks the student to find an unknown by setting up and solving a proportion. The key operation is cross-multiplication or equivalent-ratio reasoning. The problem is framed as 'the ratio of A to B is p to q' or 'y/x is constant' rather than as a rate with different unit types.",
+      "exclusion_test": "Exclude if the problem is fundamentally about applying a rate with different unit types (e.g., speed, price per pound). Exclude if the solving path requires algebraic manipulation beyond cross-multiplication (those go to RAT.7). Exclude if the problem requires unit conversion.",
+      "evidence_ids": [
+        "763e6769", "808f7d6c", "e9841407", "6310adbc", "da9ffcf6",
+        "3f236a64", "312ba47c", "3f5398a6", "51c9d65f", "61b87506",
+        "c3d78831", "9fa781f8", "825b7490", "181cc4d6"
+      ],
+      "question_count": 14,
+      "difficulty_spread": { "Easy": 8, "Medium": 6, "Hard": 0 }
+    },
+    {
+      "id": "RAT.5",
+      "name": "Direct Rate Application",
+      "definition": "Given a rate (quantity A per unit of quantity B, where A and B have different units or measure different things), compute a total by multiplying rate by quantity, or find elapsed time/quantity by dividing. This is direct single-operation rate application without unit conversion or algebraic variable manipulation.",
+      "inclusion_test": "The question provides a rate with two different quantity types (speed, price per weight, items per time, earnings per period) and asks the student to multiply or divide to find a total, elapsed time, or quantity. The core operation is rate * quantity = total (or its inverse). No chained unit conversion is needed beyond the rate itself. At most one extra arithmetic step (e.g., a fixed fee) may follow.",
+      "exclusion_test": "Exclude if the question requires converting units (those go to RAT.1/RAT.2/RAT.3). Exclude if the problem uses density (per-area or per-volume rates; those go to RAT.6). Exclude if the problem requires setting up a proportion between same-type quantities (those go to RAT.4). Exclude if algebraic manipulation with variables is needed (those go to RAT.7).",
+      "evidence_ids": [
+        "3318d37b", "4837406c", "551c52b9", "7270d642", "7cd1c6db",
+        "fe1ec415", "be35c117", "000259aa", "fe4c1c9e", "86636d8f",
+        "3ac09984", "24ad9dcb", "f6cbb04a", "1d945139", "445dd032"
+      ],
+      "question_count": 15,
+      "difficulty_spread": { "Easy": 12, "Medium": 3, "Hard": 0 }
+    },
+    {
+      "id": "RAT.6",
+      "name": "Density and Per-Area/Per-Volume Rates",
+      "definition": "Apply, compute, or invert a density or density-like quantity: population density (count per unit area), mass density (mass per unit volume), capacity density (items per unit area). The student uses the relationship density = total / (area or volume) and solves for whichever variable is unknown.",
+      "inclusion_test": "The quantity is explicitly described as a per-area rate (e.g., people per square mile, raccoons per square mile) or a per-volume rate (e.g., grams per cubic centimeter, ounces per cubic inch). The student either: (a) computes the density by dividing total by area/volume, (b) multiplies density by area/volume to find a total, or (c) divides total by density to find area/volume. May involve cube geometry (edge length to volume) as an intermediate step.",
+      "exclusion_test": "Exclude if the rate is per-time, per-weight, or per-count (those go to RAT.5). Exclude if the core task is converting area/volume units (those go to RAT.3).",
+      "evidence_ids": [
+        "99550621", "e3d49511", "15617f62", "1180401d", "873d2838",
+        "1b403590", "b4912cc5", "8e528129", "11b06e35", "5154615f",
+        "61f61789", "7d721177", "69f6717f"
+      ],
+      "question_count": 13,
+      "difficulty_spread": { "Easy": 3, "Medium": 5, "Hard": 5 }
+    },
+    {
+      "id": "RAT.7",
+      "name": "Proportional and Rate Reasoning with Algebra",
+      "definition": "Set up or manipulate proportional or rate relationships expressed with variables. This includes: algebraic manipulation of ratio/rate expressions (substitution, factoring, simplifying), comparing two rates to determine which is greater or find a relationship, applying formulas that encode proportional relationships (force = pressure * area, flux = field * area), and rate relationships that go beyond direct multiplication.",
+      "inclusion_test": "The question uses variables in the proportion or rate expression and requires algebraic manipulation beyond simple cross-multiplication with numbers. OR the question requires computing and comparing two or more rates from given data. OR the question applies a physical/scientific formula that encodes a proportional relationship between three quantities. OR the question involves a non-linear (e.g., exponential) rate relationship.",
+      "exclusion_test": "Exclude if the proportion can be solved by simple cross-multiplication with concrete numbers (those go to RAT.4). Exclude if the rate is applied by direct single multiplication/division with concrete numbers (those go to RAT.5).",
+      "evidence_ids": [
+        "96c3e32d", "7e6c745f", "e21d10a7", "3726e079", "21e539a0",
+        "c2e7fa6d", "50b99b2d", "8637294f", "20b69297", "3638f413"
+      ],
+      "question_count": 10,
+      "difficulty_spread": { "Easy": 0, "Medium": 4, "Hard": 6 }
+    }
+  ],
+  "proposed_clusters": [
+    {
+      "cluster_id": "C1",
+      "cluster_name": "Single conversion-factor multiply/divide",
+      "description": "Identify the given conversion factor, set up a single multiplication or division (using dimensional analysis or factor-label method), compute the result.",
+      "solving_steps": [
+        "Read the conversion factor (e.g., 1 yard = 3 feet)",
+        "Determine whether to multiply or divide based on the direction of conversion",
+        "Compute: quantity * factor or quantity / factor",
+        "Report the converted value"
+      ],
+      "sub_skills": ["RAT.1"]
+    },
+    {
+      "cluster_id": "C2",
+      "cluster_name": "Chained conversion-factor pipeline",
+      "description": "Identify two or more conversion factors (given or known), chain them as successive multiplications/divisions, compute the result.",
+      "solving_steps": [
+        "Identify all conversion factors needed (given + standard knowledge)",
+        "Set up a chain of conversion fractions so intermediate units cancel",
+        "Multiply/divide through the chain",
+        "Compute the final converted value"
+      ],
+      "sub_skills": ["RAT.2"]
+    },
+    {
+      "cluster_id": "C3",
+      "cluster_name": "Power-of-conversion-factor application",
+      "description": "Identify the linear conversion factor, raise it to the appropriate power (square for area, cube for volume), then apply the powered factor to convert the squared/cubed unit.",
+      "solving_steps": [
+        "Identify the linear conversion factor (e.g., 1 mile = 1760 yards)",
+        "Determine the power from the unit type (area = 2, volume = 3, acceleration = 2 for time unit)",
+        "Square or cube the linear factor",
+        "Apply the powered factor to convert the quantity",
+        "If converting a compound rate (e.g., sq ft/hr to sq m/min), chain with other conversions"
+      ],
+      "sub_skills": ["RAT.3"]
+    },
+    {
+      "cluster_id": "C4",
+      "cluster_name": "Cross-multiplication proportion solve",
+      "description": "Set up a proportion a/b = c/d from the given ratio and known value, cross-multiply, and solve for the unknown.",
+      "solving_steps": [
+        "Identify the given ratio (a:b or a/b)",
+        "Identify the known and unknown values",
+        "Set up the proportion: known_ratio = new_value / unknown",
+        "Cross-multiply and solve for the unknown",
+        "Verify the answer maintains the stated ratio"
+      ],
+      "sub_skills": ["RAT.4"]
+    },
+    {
+      "cluster_id": "C5",
+      "cluster_name": "Rate-times-quantity computation",
+      "description": "Identify the rate and the quantity, multiply (or divide) to find the total (or the missing factor).",
+      "solving_steps": [
+        "Extract the rate from the problem (may need to compute it: total / count)",
+        "Identify the target quantity or time",
+        "Multiply rate * quantity = total, or divide total / rate = quantity",
+        "Report the result (may need one additional arithmetic step like subtracting a fee)"
+      ],
+      "sub_skills": ["RAT.5"]
+    },
+    {
+      "cluster_id": "C6",
+      "cluster_name": "Density formula application (3-variable solve)",
+      "description": "Use density = total / (area or volume) as a three-variable relationship: given any two, solve for the third. May involve computing volume from geometric dimensions (e.g., cube edge length).",
+      "solving_steps": [
+        "Identify the density, total (mass/count/population), and area/volume",
+        "Determine which variable is unknown",
+        "If volume is needed from geometry, compute it (e.g., edge^3 for a cube)",
+        "Apply density = total / (area or volume) and solve for the unknown",
+        "If chained with another rate (e.g., density * price/unit), continue with the next multiplication"
+      ],
+      "sub_skills": ["RAT.6"]
+    },
+    {
+      "cluster_id": "C7",
+      "cluster_name": "Algebraic rate/proportion manipulation",
+      "description": "Express the proportional or rate relationship using variables, substitute known values or relationships, and manipulate algebraically to find the unknown or compare rates.",
+      "solving_steps": [
+        "Translate the word problem into an algebraic expression with variables",
+        "Substitute any given relationships (e.g., x/y = 4)",
+        "Simplify, factor, or rearrange to isolate the unknown",
+        "For rate comparison: compute each rate separately, then compare",
+        "For formula-based problems: substitute values into the formula and solve"
+      ],
+      "sub_skills": ["RAT.7"]
+    }
+  ],
+  "current_sub_skill_mapping": [
+    {
+      "current_id": "RAT.1",
+      "current_name": "Unit conversion (linear)",
+      "maps_to": ["RAT.1", "RAT.2"],
+      "mapping_rationale": "The current RAT.1 covers all linear unit conversions without distinguishing single-step from multi-step. The data shows a clear difficulty gradient: single-step conversions are overwhelmingly Easy (13/17), while multi-step conversions are overwhelmingly Medium (8/11). Splitting into RAT.1 (single-step) and RAT.2 (multi-step) captures this pedagogically meaningful distinction. The solving steps differ materially: single-step requires one multiply/divide, while multi-step requires chaining factors and canceling intermediate units."
+    },
+    {
+      "current_id": "RAT.2",
+      "current_name": "Ratios and proportional scaling",
+      "maps_to": ["RAT.4", "RAT.5"],
+      "mapping_rationale": "The current RAT.2 conflates two distinct skills: (a) setting up and solving a proportion between same-type quantities (a/b = c/d), and (b) applying a rate to compute a total. These have different solving steps: proportions use cross-multiplication, while rate application uses direct multiplication. Splitting clarifies the student's task. RAT.4 (proportions) and RAT.5 (rate application) each have strong question counts (14 and 15)."
+    },
+    {
+      "current_id": "RAT.3",
+      "current_name": "Rates between different quantities",
+      "maps_to": ["RAT.5", "RAT.7"],
+      "mapping_rationale": "The current RAT.3 is too broad, covering both straightforward rate*quantity problems and algebraic rate reasoning with variables. The difficulty spread confirms this: direct rate application is Easy/Medium, while algebraic rate reasoning is Medium/Hard. Splitting into RAT.5 (direct rate application, concrete numbers) and RAT.7 (algebraic rate/proportion reasoning with variables) sharpens the inclusion test and aligns with the observed difficulty gradient."
+    },
+    {
+      "current_id": "RAT.4",
+      "current_name": "Density, per-area, and per-volume rates",
+      "maps_to": ["RAT.6"],
+      "mapping_rationale": "Direct mapping with no substantive change. The current RAT.4 definition is sound. Renumbered to RAT.6 in the proposed taxonomy to accommodate the unit-conversion split. The 13-question evidence base confirms density problems form a coherent cluster with a distinctive solving approach (3-variable formula application) and a wide difficulty spread (Easy through Hard)."
+    },
+    {
+      "current_id": "RAT.5",
+      "current_name": "Converting squared and cubed units",
+      "maps_to": ["RAT.3"],
+      "mapping_rationale": "Direct mapping with no substantive change. Renumbered to RAT.3 to keep all unit-conversion sub-skills adjacent (RAT.1, RAT.2, RAT.3). The 4-question evidence base is small but 100% Hard, confirming this is a distinct and challenging skill."
+    }
+  ],
+  "off_spec_patterns": [
+    {
+      "pattern": "Exponential/non-linear rate relationship",
+      "description": "Question 3638f413 involves a doubling rate (exponential growth), which is not a proportional relationship. The question asks about a quantity that doubles at a constant rate, requiring exponential reasoning rather than linear proportionality. CB classified it under this skill, but the solving approach (recognizing and applying exponential growth) is fundamentally different from proportional reasoning.",
+      "question_ids": ["3638f413"],
+      "placed_in": "RAT.7",
+      "placement_rationale": "Placed in RAT.7 (algebraic rate reasoning) as the closest fit because it involves rate reasoning with variables, but flagged because exponential growth is categorically different from proportional relationships."
+    },
+    {
+      "pattern": "Rate application with constant offset",
+      "description": "Question 3ac09984 involves converting currency at a given rate AND THEN subtracting a fixed fee. The rate application step is standard, but the fee introduces a non-proportional constant offset. This is a minor pattern (1 question) but worth noting: the problem is fundamentally rate*quantity minus constant, not pure proportionality.",
+      "question_ids": ["3ac09984"],
+      "placed_in": "RAT.5",
+      "placement_rationale": "The core solving step is still rate * quantity; the fee is an additional arithmetic step that does not change the fundamental skill being tested."
+    }
+  ],
+  "all_question_ids": {
+    "Easy": [
+      "4e375d1f", "763e6769", "4347a032", "d7a3179d", "808f7d6c",
+      "3318d37b", "99550621", "4837406c", "94660ba8", "551c52b9",
+      "c47256ca", "8bf3f67a", "7270d642", "3ac09984", "2cdefcb1",
+      "85b33aa8", "06a152cd", "d0d9ede4", "24ad9dcb", "7cd1c6db",
+      "ba62b0b0", "fe1ec415", "0700a2d5", "c81499e1", "e9841407",
+      "aeeaec96", "2d16d62c", "6310adbc", "da9ffcf6", "3f236a64",
+      "e3d49511", "be35c117", "15617f62", "312ba47c", "000259aa",
+      "fe4c1c9e", "86636d8f", "3f5398a6", "3c8fdc40"
+    ],
+    "Medium": [
+      "51c9d65f", "674a4084", "89c39d77", "96c3e32d", "568bc2a4",
+      "f6cbb04a", "1180401d", "cb4894f9", "eb672707", "61b87506",
+      "73ddfdac", "873d2838", "7e6c745f", "ec787383", "8917ce38",
+      "1d945139", "e21d10a7", "939c46d1", "445dd032", "1b403590",
+      "181cc4d6", "fea831fc", "c3d78831", "9fa781f8", "8e528129",
+      "3726e079", "3310c2ab", "825b7490", "b4912cc5", "d28c29e1"
+    ],
+    "Hard": [
+      "d6456c7a", "11b06e35", "20b69297", "7d093333", "21e539a0",
+      "c2e7fa6d", "50b99b2d", "5154615f", "61f61789", "c7c6445f",
+      "7d721177", "8637294f", "3638f413", "e7133228", "69f6717f"
+    ]
+  },
+  "derivation_notes": {
+    "methodology": "All 84 questions were read in full from three CB PDFs (39 Easy, 30 Medium, 15 Hard). Each question's CB ID, mathematical operation, and solving steps were recorded. Questions were grouped by the core mathematical operation required (not by surface topic or wording). Proposed sub-skills were derived bottom-up from observed clusters, then cross-checked against the current RAT.1-RAT.5 taxonomy.",
+    "key_findings": [
+      "The current RAT.1 (linear unit conversion) conflates single-step and multi-step conversions that have markedly different difficulty profiles: single-step is 76% Easy, multi-step is 73% Medium.",
+      "The current RAT.2 (ratios) and RAT.3 (rates) overlap substantially. The more precise split is between proportion-solving (ratio between same-type quantities) and direct rate application (rate with different unit types).",
+      "Density problems (13 questions) form a strong, distinct cluster spanning all three difficulty levels, confirming RAT.4/RAT.6 as a standalone sub-skill.",
+      "Algebraic rate/proportion reasoning (10 questions) is a distinct Hard-skewing cluster (60% Hard) that the current taxonomy does not isolate.",
+      "Squared/cubed unit conversion is small (4 questions) but 100% Hard, confirming it as a meaningful sub-skill despite low volume.",
+      "The proposed 7 sub-skills achieve full coverage of all 84 questions with no overlaps (each question assigned to exactly one sub-skill)."
+    ],
+    "confidence_assessment": "High confidence in all sub-skill boundaries. The inclusion tests are specific enough that two independent taggers examining the same question would agree on the sub-skill assignment in at least 80 of 84 cases. The 4 borderline cases are: 3638f413 (exponential rate, placed RAT.7), 3ac09984 (rate + fee, placed RAT.5), 24ad9dcb (weight comparison, placed RAT.5), and 96c3e32d (formula-based, placed RAT.7)."
+  }
+}

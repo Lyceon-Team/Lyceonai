@@ -1896,7 +1896,7 @@ async function fulfilCheckoutSession(
   /**
    * NO COUNTRY ON THE SESSION IS EVALUATED AS US — owner ruling (Karl) 2026-10-10, confirmed
    * the same day as overriding INV-03-08 for a missing country (SCL-228, OPEN).
-   * A $0 Checkout (FOUNDING50 on Monthly, `payment_method_collection: "if_required"`) collects
+   * A $0 Checkout (a 100%-off code on Monthly, `payment_method_collection: "if_required"`) collects
    * no card and so no billing address; the owner chose this default over asking every buyer
    * for an address. A country Stripe DID provide always wins, so a non-Tier-1 country still
    * denies and remediates exactly as before. `country_source` tells the two apart in the log;

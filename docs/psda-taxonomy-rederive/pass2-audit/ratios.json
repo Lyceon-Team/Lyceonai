@@ -1,0 +1,186 @@
+{
+  "skill": "Ratios, rates, proportional relationships, and units",
+  "pass": "pass2-audit",
+  "source_pdfs": [
+    "Easy - Ratios, rates, proportional relationships, and units - Problem-Solving and Data Analysis - Math-39.pdf",
+    "Medium - Ratios, rates, proportional relationships, and units - Problem-Solving and Data Analysis - Math-30.pdf",
+    "Hard - Ratios, rates, proportional relationships, and units - Problem-Solving and Data Analysis - Math-15.pdf"
+  ],
+  "total_questions": 84,
+  "sub_skills": [
+    {
+      "id": "RAT.1",
+      "name": "Single-Step Unit Conversion",
+      "definition": "Multiply or divide a given quantity by one provided conversion factor to convert from one unit to another.",
+      "inclusion_test": "The problem provides exactly one conversion factor (e.g., '1 kilogram = 1,000 grams') and asks the student to convert a stated quantity to the target unit using that single factor. No chaining or additional operations required.",
+      "evidence_ids": [
+        "4e375d1f", "763e6769", "808f7d6c", "99550621", "551c52b9",
+        "2cdefcb1", "ba62b0b0", "0700a2d5", "c81499e1", "aeeaec96",
+        "2d16d62c"
+      ],
+      "question_count": 11,
+      "difficulty_spread": { "Easy": 11, "Medium": 0, "Hard": 0 }
+    },
+    {
+      "id": "RAT.2",
+      "name": "Multi-Step Unit Conversion",
+      "definition": "Chain two or more conversion factors in sequence to convert a measurement or rate between units that require intermediate steps (e.g., per-minute to per-hour via seconds, or quarts to fluid ounces via cups).",
+      "inclusion_test": "The problem requires applying two or more conversion factors sequentially to arrive at the answer. This includes converting a rate's denominator unit (e.g., miles per second to miles per hour) when the conversion itself requires multiplying by a compound factor derived from two unit relationships.",
+      "evidence_ids": [
+        "06a152cd", "3c8fdc40", "51c9d65f", "f6cbb04a", "939c46d1",
+        "1b403590", "fea831fc", "3310c2ab", "d28c29e1", "cb4894f9",
+        "20b69297", "50b99b2d", "7d721177"
+      ],
+      "question_count": 13,
+      "difficulty_spread": { "Easy": 2, "Medium": 8, "Hard": 3 }
+    },
+    {
+      "id": "RAT.3",
+      "name": "Squared and Cubed Unit Conversion",
+      "definition": "Convert area or volume units by squaring or cubing the linear conversion factor, rather than simply multiplying by it.",
+      "inclusion_test": "The problem involves converting between area units (e.g., square feet to square yards) or volume units, requiring the student to recognize that the linear conversion factor must be squared (for area) or cubed (for volume).",
+      "evidence_ids": [
+        "873d2838", "d6456c7a", "61f61789", "3638f413"
+      ],
+      "question_count": 4,
+      "difficulty_spread": { "Easy": 0, "Medium": 1, "Hard": 3 }
+    },
+    {
+      "id": "RAT.4",
+      "name": "Rate Application",
+      "definition": "Given a rate (quantity per unit) and a total or count, multiply to find a total output, or divide to find the missing quantity. Single-step rate reasoning with no additional unit conversion.",
+      "inclusion_test": "The problem states a rate (e.g., items per hour, cost per pound, miles per day, revolutions per minute) and asks the student to compute a total by multiplying rate times quantity, compute a unit rate by dividing total by count, or find an unknown count by dividing total by rate. Only one arithmetic operation is needed beyond identifying the rate.",
+      "evidence_ids": [
+        "4347a032", "3318d37b", "94660ba8", "8bf3f67a", "7270d642",
+        "d0d9ede4", "fe4c1c9e", "86636d8f", "fe1ec415", "be35c117",
+        "000259aa"
+      ],
+      "question_count": 11,
+      "difficulty_spread": { "Easy": 11, "Medium": 0, "Hard": 0 }
+    },
+    {
+      "id": "RAT.5",
+      "name": "Proportion Setup and Solve",
+      "definition": "Set up an equation of two equivalent ratios (a/b = c/d) with one unknown and solve by cross-multiplication or algebraic manipulation.",
+      "inclusion_test": "The problem states that two ratios are equivalent, or gives a fixed ratio and asks for an unknown value when one of the four quantities changes. The student must set up a proportion equation and solve algebraically.",
+      "evidence_ids": [
+        "4837406c", "3ac09984", "24ad9dcb", "6310adbc", "da9ffcf6",
+        "3f5398a6", "568bc2a4", "eb672707", "73ddfdac", "445dd032",
+        "9fa781f8", "825b7490", "181cc4d6", "11b06e35", "8637294f"
+      ],
+      "question_count": 15,
+      "difficulty_spread": { "Easy": 6, "Medium": 7, "Hard": 2 }
+    },
+    {
+      "id": "RAT.6",
+      "name": "Proportional Expression Construction",
+      "definition": "Given a ratio between two quantities and a variable representing one of them, identify or construct the correct algebraic expression that represents the other quantity.",
+      "inclusion_test": "The problem gives a fixed ratio (e.g., coaches to athletes is 1 to 26) and a variable for one quantity (e.g., x coaches), then asks the student to select the algebraic expression for the other quantity from multiple choices. The solving step is ratio-to-expression translation, not numeric computation.",
+      "evidence_ids": [
+        "d7a3179d", "85b33aa8", "674a4084", "1180401d", "7e6c745f",
+        "1d945139", "c3d78831", "5154615f"
+      ],
+      "question_count": 8,
+      "difficulty_spread": { "Easy": 2, "Medium": 5, "Hard": 1 }
+    },
+    {
+      "id": "RAT.7",
+      "name": "Ratio Interpretation and Simplification",
+      "definition": "Determine, simplify, or apply a ratio from given quantities; find a missing value in a table where the ratio between columns is constant; or compute and compare unit rates from tabular data.",
+      "inclusion_test": "The problem asks the student to: express a ratio in simplest form given two counts; identify a constant ratio across rows of a table and solve for a missing entry; use a given part-to-part ratio to find one part from the other; or compute unit rates from tabular data.",
+      "evidence_ids": [
+        "e9841407", "c47256ca", "3f236a64", "7cd1c6db", "312ba47c",
+        "ec787383"
+      ],
+      "question_count": 6,
+      "difficulty_spread": { "Easy": 5, "Medium": 1, "Hard": 0 }
+    },
+    {
+      "id": "RAT.8",
+      "name": "Density and Derived-Rate Calculations",
+      "definition": "Compute density (population density, material density) from a total and an area or volume, or use a given density to find a derived quantity. May require computing volume from dimensions (V = s^3 for a cube).",
+      "inclusion_test": "The problem involves a density quantity (people per square mile, grams per cubic centimeter, ounces per cubic inch) and asks the student to compute the density from a total and area/volume, use density to find the total or the area/volume, or chain density with a unit price. Problems involving cube geometry (V = s^3) to determine volume before applying density belong here.",
+      "evidence_ids": [
+        "e3d49511", "15617f62", "e21d10a7", "96c3e32d", "8e528129",
+        "7d093333", "c7c6445f"
+      ],
+      "question_count": 7,
+      "difficulty_spread": { "Easy": 2, "Medium": 3, "Hard": 2 }
+    },
+    {
+      "id": "RAT.9",
+      "name": "Multi-Step Rate and Proportion Problems",
+      "definition": "Combine rate or proportion reasoning with one or more additional arithmetic operations such as percentage adjustments, differences between derived values, algebraic substitution, scale-factor application, or currency conversion with surcharges.",
+      "inclusion_test": "The problem requires proportional or rate reasoning PLUS at least one additional step: applying a percentage surcharge or fee, computing a difference between two density-derived values, performing algebraic substitution into a ratio equation, converting currencies with a percentage adjustment, or applying a scale factor to a real-world measurement.",
+      "evidence_ids": [
+        "89c39d77", "61b87506", "8917ce38", "3726e079", "b4912cc5",
+        "21e539a0", "c2e7fa6d", "e7133228", "69f6717f"
+      ],
+      "question_count": 9,
+      "difficulty_spread": { "Easy": 0, "Medium": 5, "Hard": 4 }
+    }
+  ],
+  "clusters": [
+    {
+      "name": "Direct Factor Application",
+      "definition": "Problems solved by a single multiplication or division using a given conversion factor or rate. The student identifies whether to multiply or divide and applies the factor once.",
+      "evidence_ids": [
+        "4e375d1f", "763e6769", "808f7d6c", "99550621", "551c52b9",
+        "2cdefcb1", "ba62b0b0", "0700a2d5", "c81499e1", "aeeaec96",
+        "2d16d62c", "4347a032", "3318d37b", "94660ba8", "8bf3f67a",
+        "7270d642", "d0d9ede4", "fe4c1c9e", "86636d8f", "fe1ec415",
+        "be35c117", "000259aa"
+      ]
+    },
+    {
+      "name": "Cross-Multiplication",
+      "definition": "Problems solved by setting up two equivalent ratios as a proportion (a/b = c/d), cross-multiplying, and solving the resulting linear equation for the unknown. Includes finding missing table entries via constant-ratio reasoning.",
+      "evidence_ids": [
+        "4837406c", "3ac09984", "24ad9dcb", "6310adbc", "da9ffcf6",
+        "3f5398a6", "568bc2a4", "eb672707", "73ddfdac", "445dd032",
+        "9fa781f8", "825b7490", "181cc4d6", "11b06e35", "8637294f",
+        "e9841407", "c47256ca", "3f236a64", "312ba47c",
+        "7cd1c6db", "ec787383"
+      ]
+    },
+    {
+      "name": "Ratio-to-Expression Translation",
+      "definition": "Problems solved by interpreting a stated ratio and translating it into an algebraic expression involving a variable. The student must understand that scaling both parts of a ratio by the same factor preserves the ratio.",
+      "evidence_ids": [
+        "d7a3179d", "85b33aa8", "674a4084", "1180401d", "7e6c745f",
+        "1d945139", "c3d78831", "5154615f"
+      ]
+    },
+    {
+      "name": "Conversion-Factor Chaining",
+      "definition": "Problems solved by multiplying or dividing by two or more conversion factors in sequence, including squaring or cubing a linear factor for area/volume unit conversions.",
+      "evidence_ids": [
+        "06a152cd", "3c8fdc40", "51c9d65f", "f6cbb04a", "939c46d1",
+        "1b403590", "fea831fc", "3310c2ab", "d28c29e1", "cb4894f9",
+        "20b69297", "50b99b2d", "7d721177", "873d2838", "d6456c7a",
+        "61f61789", "3638f413"
+      ]
+    },
+    {
+      "name": "Density Formula Application",
+      "definition": "Problems solved by applying the density formula (density = total / area-or-volume), rearranging to solve for the unknown quantity, and in some cases first computing volume from a side length using V = s^3.",
+      "evidence_ids": [
+        "e3d49511", "15617f62", "e21d10a7", "96c3e32d", "8e528129",
+        "7d093333", "c7c6445f"
+      ]
+    },
+    {
+      "name": "Multi-Operation Rate-Proportion Composition",
+      "definition": "Problems requiring a primary rate or proportion step followed by one or more additional arithmetic operations: percentage calculation, subtraction of two derived quantities, algebraic substitution, scale-factor geometry, or currency conversion with surcharge.",
+      "evidence_ids": [
+        "89c39d77", "61b87506", "8917ce38", "3726e079", "b4912cc5",
+        "21e539a0", "c2e7fa6d", "e7133228", "69f6717f"
+      ]
+    }
+  ],
+  "notes": {
+    "unit_rate_table_questions": "Questions 7cd1c6db and ec787383 involve reading unit rates from tables. They are categorized under RAT.7 (Ratio Interpretation) because the primary skill is extracting and comparing ratios from data, not setting up a proportion equation.",
+    "density_vs_rate": "Density problems (RAT.8) are distinguished from simple rate application (RAT.4) by the involvement of area or volume as the denominator unit, often requiring geometric reasoning (e.g., V = s^3) or multi-step chaining (density times price).",
+    "difficulty_gradient": "RAT.1 and RAT.4 are exclusively Easy. RAT.3 and RAT.9 are exclusively Medium-Hard. RAT.5 spans all three levels. This suggests unit conversion and rate application are foundational, while squared/cubed conversion and multi-step composition are advanced."
+  }
+}

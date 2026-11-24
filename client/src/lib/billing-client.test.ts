@@ -71,6 +71,42 @@ describe("billing-client", () => {
   });
 
   /**
+   * Post-ALPHA brief (Karl, 2026-11-11) item 3: a linked code that could not be applied is not
+   * redirected straight to Stripe; the page says "This code isn't available any more" and its
+   * button continues to this session. An applied code redirects as before.
+   */
+  it.each([
+    ["applied", true],
+    ["unavailable", false],
+  ] as const)(
+    "a linked code %s: redirects to Stripe only when it was applied (%s)",
+    async (promo, redirects) => {
+      csrfFetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          kind: "checkout_session",
+          url: "https://stripe.example/checkout",
+          sessionId: "cs_test_1",
+          promo,
+        }),
+      );
+      const outcome = await startSubscriptionCheckout("monthly", {
+        promo: "GRIND",
+      });
+      expect(outcome.promo).toBe(promo);
+      expect(bodyOf(csrfFetchMock.mock.calls[0] ?? [])).toMatchObject({
+        promo: "GRIND",
+      });
+      if (redirects) {
+        expect(assignMock).toHaveBeenCalledWith(
+          "https://stripe.example/checkout",
+        );
+      } else {
+        expect(assignMock).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  /**
    * THE DELETED ADD-ITEM OUTCOME MUST NOT BE ACCEPTED. It used to be the
    * guardian's second-purchase response: `{kind:"item_added"}` with no `url`,
    * settled server-side with no redirect — and with no charge at purchase time,

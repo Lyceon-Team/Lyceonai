@@ -1,0 +1,39 @@
+domain,segment_id,kind,id,reason
+advanced-math,10295430-69be-4030-b522-f916017e8b94,sub_skill,NLF.4,"Generic evidence copied across 4 segments; a which-is-a-factor question is EE.3's specific inclusion (agreed), so NLF.4 duplicates it."
+advanced-math,6dcb74ef-cae4-4a6b-92d7-0777068dff89,sub_skill,NLF.4,"Generic evidence copied across 4 segments; divisibility by a linear factor is EE.3 (agreed), so NLF.4 duplicates it."
+advanced-math,87866eeb-101d-413c-bcfd-0112fd137a4b,sub_skill,NLF.4,Rejected in the dispute: EE.3 is the specific fit for identifying factors; the evidence is generic boilerplate.
+advanced-math,1483e725-aaa9-42e8-a46e-29f9b222579d,sub_skill,NLF.4,"Summary is the remainder theorem with a table of values to find a remainder, not zeros or factors; the evidence is generic boilerplate from the factor-theorem segments."
+advanced-math,383f1880-8635-4cc7-bfb5-2ca73f601239,sub_skill,EE.2,Expansion is an intermediate step of a radical equation (NLE.3); EE.2's inclusion needs an expanded target form for the question.
+advanced-math,383f1880-8635-4cc7-bfb5-2ca73f601239,sub_skill,EE.3,"Factoring is an intermediate step of solving a radical equation; the question's target is not a product form, so NLE.3 covers it."
+advanced-math,383f1880-8635-4cc7-bfb5-2ca73f601239,sub_skill,NLE.2,NLE.2's inclusion excludes equations with a radical over the unknown; the summary is a radical equation (NLE.3).
+advanced-math,6def55f5-9cfc-43b5-9ef9-1d9dfa128c72,cluster,CL.0087,"Rejected in the dispute: the evidence shows roots being shifted, not the equation being rewritten with x-h."
+advanced-math,485afb49-43a6-40e8-a050-1df42936eec9,cluster,CL.0104,CL.0104 translates words into an equation; setting a polynomial equal to zero under the factor theorem is not a verbal translation.
+advanced-math,d5cd3f65-c08c-4de7-9aa8-2faf568d9239,cluster,CL.0081,CL.0081 is the inequality bound rounding (greatest or least whole number); the evidence is plain nearest-whole rounding of 20.93.
+advanced-math,5f276c11-495c-42e1-aa42-566ea91bc940,cluster,CL.0225,"A one-variable radical equation graphed side by side is CL.0220 (graph each side, read the crossing x), not a two-variable system."
+advanced-math,f8ff6088-f4b6-4315-8edf-6fa258f750e1,cluster,CL.0225,"The summary is a one-variable absolute value equation; graphing each side is CL.0220, not system intersection (the summary does not mention Desmos)."
+algebra,3854498f-86ac-4705-8fa1-89c4a6831c9a,cluster,CL.0004,"Adding x and y to evaluate x + y is an expression value from a system, not a part-whole total."
+algebra,64432b35-6e09-4e31-af90-dd5d87707bee,cluster,CL.0004,"Adding x and y to evaluate x + y is an expression value from a system, not a part-whole total."
+algebra,91b8d3cf-f9ee-486a-a467-bbf07f923e74,cluster,CL.0047,Its own evidence says isolating is only mentioned in an introduction; no equation is worked.
+algebra,97693338-2f48-419d-bb46-12284619b7bc,cluster,CL.0228,Slider moves a parameterized point (CL.0221 move); no unknown constant is solved for.
+algebra,fd3d693c-5422-41da-b21b-d2ab7bba1eec,cluster,CL.0228,Slider moves a parameterized point (CL.0221 move); no unknown constant is solved for.
+algebra,c8bb357c-7347-4c1a-9927-6d24c37d5aa2,cluster,CL.0189,Evidence is advice to read for x + y; no target expression is reached without solving in this overview.
+geometry,1cd919ca-07a9-42e9-93c6-0a034b5be870,cluster,CL.0118,Prod evidence says the theorem is only mentioned as the standard method; the segment teaches triples as a shortcut instead.
+geometry,2483dcaf-285f-4191-b38d-c708d3a10c16,cluster,CL.0119,"Prod evidence cites 30-60-90 ratios on the reference sheet, which is not substituting into an area/volume formula (CL.0167 covers it)."
+geometry,315b602f-045e-4de4-8c4f-1590f9e6c362,cluster,CL.0104,"Prod evidence is drawing a labeled diagram from the description, not writing an equation from words."
+geometry,3b67ffb6-2d4e-4168-8de1-fe0c33d00b23,cluster,CL.0112,Prod evidence is same-side interior angles summing to 180; CL.0112 is angles forming a straight line. CL.0148 covers transversal pairs.
+geometry,9cf23467-3829-43b0-9152-86723c2c2200,cluster,CL.0112,"Prod evidence is same-side interior angles across parallels summing to 180, not a linear pair; CL.0148 covers it."
+geometry,78a93ab2-e494-44dd-8055-12c7c8027711,cluster,CL.0228,"Slider is used to scale the triangle and show similarity, not to solve for an unknown constant until a condition holds."
+psda,1e7214dc-5949-492e-b829-b5add22e8bb1,sub_skill,NLF.4,"Finding a quadratic's equation from table points is NLF.1 (agreed); none of NLF.4's structural triggers (vertex, zeros, form conversion, word model) is in the summary."
+psda,184d6783-3008-4e10-b6aa-b8ea28b60d1b,cluster,CL.0004,"Predicted minus actual is a residual difference (agreed TVD.12), not a whole-equals-sum-of-parts relationship."
+psda,5c03b4fe-acf9-4a52-b3a9-a739c9d63035,cluster,CL.0138,Evidence shows only increase/decrease formulas; nothing contrasts 'p% of' with 'p% more/less than'.
+craft-structure,161174f4-fa4d-424e-8398-637fedf1cac0,sub_skill,CTC.2,"Summary describes a 'relationship between two texts' stem (CTC.5, agreed by both passes), not the response stem CTC.2's inclusion_test requires."
+craft-structure,d89a796c-3163-421e-b3a2-65f05d804397,cluster,CL.0010,"Evidence is a single unsupported detail (prior research methods), not splitting a multi-part choice and checking each part."
+craft-structure,eb18da03-0755-4e13-9039-5d41e0e305bf,cluster,CL.0108,CL.0108 is a Boundaries punctuation-placement rule; evidence only reads the colon as signalling an explanation in a function question.
+expression-ideas,58b3073d-eea6-481d-b3b0-01fae830b3ca,cluster,CL.0049,"CL.0049 labels the role of each sentence in a passage (TSP/Cross-Text). The evidence labels wrong answer choices as method/findings against an RS 'aim' goal, which is closer to CL.0206 or RS.3 than to sentence-role labeling."
+expression-ideas,88aed73a-b526-4319-af10-bcd8d32b982c,cluster,CL.0188,"CL.0188 is about matching an RS choice's comparison wording to the goal. This segment is a transition question about a similarity relationship, so there are no choice wordings being matched to a goal."
+expression-ideas,b0e5708d-4df9-4b73-9e1f-a54062bf24b5,cluster,CL.0193,"CL.0193 is the RS move of matching a goal's generalization/example level. For a 'specifically' transition the fitting cluster is CL.0195, which is already agreed."
+expression-ideas,dc9fa424-ab61-4fbc-85e6-3ad9e6fc173d,cluster,CL.0056,"CL.0056 is the Words in Context move of choosing a word with the right positive/negative charge. Here the negative-to-positive labeling is used to find a contrast transition, which TRN.1/CL.0186 already cover."
+expression-ideas,dc9fa424-ab61-4fbc-85e6-3ad9e6fc173d,cluster,CL.0143,"CL.0143 needs a contrast signal word spotted in the text. The evidence only describes a contrast relationship (struggles vs. popularity); the contrast word is the answer being chosen, not a clue in the text."
+standard-english,08ce6404-910a-4264-9629-352bc9b1bc76,cluster,CL.0051,"CL.0051 is pronoun-antecedent number; the evidence uses 'they'/'she' only as a test of verb form in a verb-tense intro, not to choose a pronoun."
+standard-english,235e8715-4ff7-45e6-9804-67e67066a74c,cluster,CL.0129,Evidence says the segment only 'mentions' that periods and semicolons separate full sentences; no test of each side for a complete clause is described.
+standard-english,d73abf51-6f2c-433c-9beb-cb1c99220cc8,cluster,CL.0152,"Summary is two non-independent elements coordinated with 'and' (covered by CL.0065's two-item rule); CL.0152 is for splitting subject/verb/object/preposition, which neither summary nor evidence shows."

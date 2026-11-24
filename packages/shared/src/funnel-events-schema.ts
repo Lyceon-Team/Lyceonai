@@ -36,7 +36,10 @@ export type FunnelAnswerSource = z.infer<typeof funnelAnswerSourceSchema>;
 export const funnelAgeBandSchema = z.enum(["13-17", "18+"]);
 export type FunnelAgeBand = z.infer<typeof funnelAgeBandSchema>;
 
-/** `upgraded.via`: a 100%-off founding code, a guardian's payment, or the student's own. */
+/**
+ * `upgraded.via`: any 100%-off code, a guardian's payment, or the student's own. `alpha` is the
+ * value's historical name (the first such code); it is kept so the event history stays one series.
+ */
 export const funnelUpgradeViaSchema = z.enum([
   "alpha",
   "paid",

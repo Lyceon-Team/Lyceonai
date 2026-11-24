@@ -1,0 +1,8 @@
+domain,segment_id,reason
+algebra,a3f15554-464a-4a13-a90b-be55c6ac8baa,Midpoint-formula segment; no Algebra (or other) sub-skill covers the midpoint formula in the taxonomy (checked sub_skills for midpoint/distance). Cluster CL.0115 only.
+algebra,b9243e41-7fc4-4f98-b4f8-460aa5b737d2,Distance-formula segment; no sub-skill in the taxonomy covers the distance formula (checked sub_skills). Clusters CL.0113/CL.0094 only.
+geometry,9d4657c4-bc55-4de7-bdea-d003d5ed5b79,"Formula 25 teaches the n-gon interior angle sum (n-2)*180; no sub-skill in the taxonomy covers polygon angle sums (LAT.2 is triangle-only, AV.1 is perimeter/area). Taxonomy gap; leave untagged."
+psda,925eb974-3b8d-451b-8e5a-72bb0ed9165e,Qualitative graph-matching (spring's potential energy vs time): no sub-skill fits; TVD.1/TVD.6 need reading data values and TVD.5/TVD.10 classify model type. Existing CL.0161 kept.
+information-ideas,1c277158-3986-4d96-a202-0fdfe8c451d5,Inference item (Stoicism and happiness) but the summary and production evidence do not show which INF class the keyed answer meets (INF.3 tension vs INF.5 view vs INF.2); no sub-skill reaches medium confidence. Karl to check against the CB item.
+standard-english,bb99ed9a-7ff0-4ea5-b2cc-49053fcc0f3a,"Old-SAT transition/relevance question resolved by linking back to the earlier 'Rosa Parks' comparison; summary names no keyed transition word, so no TRN.1-5 inclusion test can be confirmed. Cluster CL.0141 already covers the move."
+standard-english,e7e17cb5-3871-4ac6-a80c-6281867a1799,Old-SAT add/delete-sentence question judged on historical significance; no sub-skill in the taxonomy covers add/delete relevance questions. Existing cluster CL.0010 covers the move.

@@ -7157,6 +7157,143 @@ $$;
 
 
 --
+-- Name: email_gate_pause_profiles(uuid[], text, boolean, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_pause_profiles(p_profile_ids uuid[], p_reason text, p_dry_run boolean DEFAULT true, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  r             record;
+  g             record;
+  v_row         public.email_gate_state%ROWTYPE;
+  v_found       boolean;
+  v_episode     integer;
+  v_to_pause    uuid[] := '{}';
+  v_already     uuid[] := '{}';
+  v_not_student uuid[] := '{}';
+  v_no_profile  uuid[] := '{}';
+  v_guardians   integer := 0;
+BEGIN
+  IF p_dry_run IS NULL OR p_now IS NULL THEN
+    RAISE EXCEPTION 'email_gate_pause_profiles: p_dry_run and p_now are required'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  IF p_reason IS NULL OR p_reason !~ '^[a-z][a-z0-9_]{2,63}$' THEN
+    RAISE EXCEPTION 'email_gate_pause_profiles: reason must be 3-64 characters of a-z, 0-9 and _, starting with a letter'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  IF p_profile_ids IS NULL OR cardinality(p_profile_ids) = 0 THEN
+    RAISE EXCEPTION 'email_gate_pause_profiles: no profile ids' USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  IF cardinality(p_profile_ids) > 1000 THEN
+    RAISE EXCEPTION 'email_gate_pause_profiles: at most 1000 ids per call' USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  FOR r IN
+    SELECT DISTINCT u.id, p.id AS pid, p.role::text AS role, p.deleted_at
+      FROM unnest(p_profile_ids) AS u(id)
+      LEFT JOIN public.profiles p ON p.id = u.id
+     WHERE u.id IS NOT NULL
+     ORDER BY u.id
+  LOOP
+    IF r.pid IS NULL OR r.deleted_at IS NOT NULL THEN
+      v_no_profile := v_no_profile || r.id;
+      CONTINUE;
+    END IF;
+    IF r.role <> 'student' THEN
+      v_not_student := v_not_student || r.id;
+      CONTINUE;
+    END IF;
+
+    IF NOT p_dry_run THEN
+      -- The same per-person lock email_gate_refresh takes, so a concurrent refresh cannot interleave.
+      PERFORM pg_advisory_xact_lock(hashtext('email_gate:' || r.id::text));
+    END IF;
+    SELECT * INTO v_row FROM public.email_gate_state WHERE profile_id = r.id FOR UPDATE;
+    v_found := FOUND;
+    IF v_found AND v_row.state = 'paused' THEN
+      v_already := v_already || r.id;
+      CONTINUE;
+    END IF;
+    v_to_pause := v_to_pause || r.id;
+
+    -- The parent digest pauses this function opens (counted in a dry run too): the open filter of
+    -- email_gate_guardian_refresh, minus the idle threshold.
+    FOR g IN
+      SELECT DISTINCT l.guardian_profile_id AS guardian_id
+        FROM public.guardian_links l
+        JOIN public.profiles gp ON gp.id = l.guardian_profile_id
+       WHERE l.student_profile_id = r.id AND l.status = 'active'
+         AND gp.role::text = 'guardian' AND gp.deleted_at IS NULL
+         AND public.guardian_daily_digest_email_enabled(gp.id)
+         AND public.guardian_view_decision(gp.id, r.id) = 'allow'
+         AND public.email_gate_launch_pause_reason(gp.id, p_now) IS NULL
+         AND NOT EXISTS (SELECT 1 FROM public.email_gate_guardian_pauses x
+                          WHERE x.guardian_id = gp.id AND x.student_id = r.id AND x.resumed_at IS NULL)
+       ORDER BY 1
+    LOOP
+      v_guardians := v_guardians + 1;
+      IF NOT p_dry_run THEN
+        SELECT COALESCE(max(x.episode), 0) + 1 INTO v_episode
+          FROM public.email_gate_guardian_pauses x
+         WHERE x.guardian_id = g.guardian_id AND x.student_id = r.id;
+        INSERT INTO public.email_gate_guardian_pauses (guardian_id, student_id, episode, paused_at)
+        VALUES (g.guardian_id, r.id, v_episode, p_now);
+      END IF;
+    END LOOP;
+
+    IF p_dry_run THEN
+      CONTINUE;
+    END IF;
+
+    IF NOT v_found THEN
+      INSERT INTO public.email_gate_state (profile_id, state, reason, state_since, updated_at)
+      VALUES (r.id, 'active', 'initial', p_now, p_now)
+      RETURNING * INTO v_row;
+    END IF;
+
+    UPDATE public.email_gate_state
+       SET state = 'paused',
+           reason = p_reason,
+           state_since = p_now,
+           pause_episode = pause_episode + 1,
+           updated_at = p_now
+     WHERE profile_id = r.id;
+
+    INSERT INTO public.email_gate_transitions (profile_id, from_state, to_state, reason, actor, occurred_at)
+    VALUES (r.id, v_row.state, 'paused', p_reason, 'bulk_pause', p_now);
+
+    -- Never for an under-13; the worker only updates an existing Resend contact.
+    PERFORM public.email_gate_enqueue_mirror(r.id, 'paused', p_now);
+  END LOOP;
+
+  -- Guardians whose digest pauses changed: bring their own state up to date (no email: the
+  -- pause note in email_gate_refresh is for students only).
+  IF NOT p_dry_run THEN
+    FOR g IN
+      SELECT DISTINCT x.guardian_id FROM public.email_gate_guardian_pauses x
+       WHERE x.paused_at = p_now AND x.student_id = ANY (v_to_pause)
+       ORDER BY 1
+    LOOP
+      PERFORM public.email_gate_refresh(g.guardian_id, p_now, 'system');
+    END LOOP;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'dry_run', p_dry_run,
+    'reason', p_reason,
+    'to_pause', to_jsonb(v_to_pause),
+    'already_paused', to_jsonb(v_already),
+    'not_student', to_jsonb(v_not_student),
+    'no_profile', to_jsonb(v_no_profile),
+    'guardian_digest_pauses', v_guardians);
+END;
+$_$;
+
+
+--
 -- Name: email_gate_record_plan_days(uuid, jsonb, text, date, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -19663,7 +19800,7 @@ CREATE TABLE public.email_gate_transitions (
     reason text NOT NULL,
     actor text NOT NULL,
     occurred_at timestamp with time zone NOT NULL,
-    CONSTRAINT email_gate_transitions_actor_check CHECK ((actor = ANY (ARRAY['system'::text, 'keep_me_posted'::text, 'backfill'::text]))),
+    CONSTRAINT email_gate_transitions_actor_check CHECK ((actor = ANY (ARRAY['system'::text, 'keep_me_posted'::text, 'backfill'::text, 'bulk_pause'::text]))),
     CONSTRAINT email_gate_transitions_from_state_check CHECK ((from_state = ANY (ARRAY['active'::text, 'cooling'::text, 'paused'::text]))),
     CONSTRAINT email_gate_transitions_to_state_check CHECK ((to_state = ANY (ARRAY['active'::text, 'cooling'::text, 'paused'::text])))
 );
@@ -30572,6 +30709,14 @@ GRANT ALL ON FUNCTION public.email_gate_outbox_due(p_now timestamp with time zon
 
 REVOKE ALL ON FUNCTION public.email_gate_outbox_mark(p_profile_id uuid, p_email_state text, p_ok boolean, p_error text, p_now timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.email_gate_outbox_mark(p_profile_id uuid, p_email_state text, p_ok boolean, p_error text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_pause_profiles(p_profile_ids uuid[], p_reason text, p_dry_run boolean, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_pause_profiles(p_profile_ids uuid[], p_reason text, p_dry_run boolean, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_pause_profiles(p_profile_ids uuid[], p_reason text, p_dry_run boolean, p_now timestamp with time zone) TO service_role;
 
 
 --

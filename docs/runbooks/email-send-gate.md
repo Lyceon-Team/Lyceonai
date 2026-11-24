@@ -66,10 +66,36 @@ SELECT public.record_campaign_send('<address>', '<campaign>', '<variant or NULL>
 -- 'recorded' | 'duplicate' (same Resend id) | 'unknown_recipient'
 ```
 
+## Silent bulk pause (Karl, 2026-11-11; SCL-281)
+
+For a list of students whose emails should stop without telling them or their parent, such as the December cohort drop. Their account, progress and any free Pro are untouched. Apply `supabase/migrations/20261205000000_email_gate_pause_profiles.sql` first. Owner-run, service role.
+
+```sql
+-- 1. Dry run (the default): writes nothing, lists who would change.
+SELECT public.email_gate_pause_profiles(ARRAY['<id>', '<id>']::uuid[], 'cohort_drop_2026_11_16');
+-- {"dry_run": true, "to_pause": [...], "already_paused": [...], "not_student": [...],
+--  "no_profile": [...], "guardian_digest_pauses": n}
+
+-- 2. Check the lists, then the real run with the same ids and reason.
+SELECT public.email_gate_pause_profiles(ARRAY['<id>', '<id>']::uuid[], 'cohort_drop_2026_11_16', false);
+
+-- 3. Afterwards: who it paused, and who has woken since.
+SELECT t.profile_id, g.state FROM public.email_gate_transitions t
+  JOIN public.email_gate_state g USING (profile_id)
+ WHERE t.actor = 'bulk_pause' AND t.reason = 'cohort_drop_2026_11_16';
+```
+
+- **Silent:** no pause note to the student, and no parent pause email: the parent's digest for that student pauses quietly, as it would have once the student went idle.
+- **Wake-up is unchanged:** any activity or Keep me posted wakes the student; student activity or a guardian sign-in resumes the parent's digest.
+- **Safe to re-run:** a student already paused is listed as `already_paused` and nothing is written.
+- **Resend:** `email_state = paused` is queued for the mirror (never for an under-13); the mirror only updates an existing contact and never creates one.
+- **Students only:** a guardian id comes back as `not_student`. At most 1000 ids per call. The reason is 3-64 characters of a-z, 0-9 and `_`.
+- The pause has effect only while `email_gate_enabled` is true.
+
 ## Tuning
 
 Every threshold is a row in `public.notification_runtime_config` (history in `notification_runtime_config_history`). `email_gate_enabled = false` allows every governed email while still recording state. A missing or malformed key fails closed (the gate errors, and the dispatcher defers rather than sends).
 
 ## Proof
 
-`tests/ci/email-gate.pg.ci.test.ts`, `tests/ci/email-gate.contract.test.ts`, the D18 and W1 cases in `tests/ci/exam-score-renewal.contract.test.ts`; planted defects in `scripts/ci/email-gate.mutations.sh` (G01–G51).
+`tests/ci/email-gate.pg.ci.test.ts`, `tests/ci/email-gate.contract.test.ts`, the D18 and W1 cases in `tests/ci/exam-score-renewal.contract.test.ts`; planted defects in `scripts/ci/email-gate.mutations.sh` (G01–G87; the bulk pause is BP1–BP6 and G76–G87).

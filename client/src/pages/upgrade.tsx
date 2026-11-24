@@ -166,9 +166,6 @@ export default function UpgradePage() {
         : promoFromSearch(window.location.search),
     [],
   );
-  // A promo link pre-selects Monthly: that card takes the page's one filled action.
-  const emphasisedPlan = promo ? PROMO_PLAN : bestValue;
-
   const checkoutMutation = useMutation({
     mutationFn: async (plan: BillingPlan) =>
       // Without a promo link the call is exactly as before; the code rides only with Monthly.
@@ -185,6 +182,21 @@ export default function UpgradePage() {
       });
     },
   });
+
+  // A linked code that could not be applied (unknown, expired, used up, or refused): the checkout
+  // session exists without it, and the page says so before sending the student on. Derived from
+  // the mutation's result, never stored (post-ALPHA brief, Karl 2026-11-11, item 3).
+  const unavailableCheckoutUrl =
+    checkoutMutation.data?.promo === "unavailable"
+      ? checkoutMutation.data.url
+      : null;
+  // A promo link pre-selects Monthly: that card takes the page's one filled action. When the code
+  // was unavailable, the notice's "Continue to checkout" is that action instead.
+  const emphasisedPlan = unavailableCheckoutUrl
+    ? null
+    : promo
+      ? PROMO_PLAN
+      : bestValue;
 
   return (
     <div className="flex flex-col gap-8" data-testid="upgrade-page">
@@ -207,6 +219,18 @@ export default function UpgradePage() {
           actionLabel="Retry"
           onAction={() => void refetch()}
         />
+      )}
+
+      {unavailableCheckoutUrl && (
+        <div data-testid="upgrade-promo-unavailable">
+          <Notice
+            tone="info"
+            title="This code isn't available any more."
+            message="You can still continue to checkout at the regular price, and enter another code there if you have one."
+            actionLabel="Continue to checkout"
+            onAction={() => window.location.assign(unavailableCheckoutUrl)}
+          />
+        </div>
       )}
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
@@ -286,7 +310,7 @@ export default function UpgradePage() {
                   </p>
                 )}
               </div>
-              {isPromoPlan && (
+              {isPromoPlan && !unavailableCheckoutUrl && (
                 <p
                   className="m-0 text-lyc-meta-lg text-lyc-ink"
                   data-testid="upgrade-promo-note"

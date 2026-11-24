@@ -1,0 +1,75 @@
+{
+  "skill": "Evaluating Statistical Claims: Observational Studies and Experiments",
+  "skill_code": "ESC",
+  "total_questions_read": 11,
+  "question_ids_read": [
+    "9bf4c545", "82dfb646",
+    "37930b2a", "b4f5a7ca", "642519d7",
+    "6fca0144", "4a422e3e", "aa43b41f", "7ce2830a", "7d68096f", "1ea09200"
+  ],
+  "proposed_sub_skills": [
+    {
+      "id": "ESC.1",
+      "name": "Determining Generalization Scope",
+      "definition": "Given a study with a random sample drawn from a specific population, identify the largest group to which the results can be generalized -- the population from which the sample was selected, no broader.",
+      "inclusion_test": "Does the question describe a random sample from a defined population and ask which group the results apply to, or ask the student to select the correct scope of the conclusion? If yes, ESC.1. If the question instead asks the student to detect a flaw in the sampling method, it is ESC.2.",
+      "evidence_ids": [
+        "82dfb646", "b4f5a7ca",
+        "6fca0144", "7ce2830a", "7d68096f", "1ea09200"
+      ],
+      "question_count": 6,
+      "difficulty_spread": {"easy": 1, "medium": 1, "hard": 4},
+      "notes": "The dominant sub-skill (6/11 questions). All follow the same pattern: a study uses a random sample from population X, and the student must identify X as the generalization boundary. Distractors typically extend the conclusion too broadly (e.g., from one school to all schools in the city) or too narrowly (e.g., just the sample itself). Question 7d68096f adds a distraction: a table shows a subset of the sample (40 of 55 teams), but the generalization scope is still determined by the sampling frame (all teams in the tournament), not the table subset. Question 82dfb646 tests scope from the other direction -- the sample was from people who liked a book, so you can only conclude about people who liked the book, not all moviegoers or all readers. Question 6fca0144 involves an experiment (random assignment to treatment groups) but the generalization question is about the sampling frame, not causation."
+    },
+    {
+      "id": "ESC.2",
+      "name": "Identifying Sampling Bias",
+      "definition": "Recognize when a sampling method is flawed because the sample is not representative of the target population, due to convenience sampling, voluntary response, or selection from a non-representative subgroup.",
+      "inclusion_test": "Does the question describe a sampling method that is NOT random from the target population and ask the student to identify the flaw, explain why results are unreliable, or select the correct criticism? If yes, ESC.2. If the sample IS random and the question is about scope, it is ESC.1.",
+      "evidence_ids": [
+        "9bf4c545",
+        "4a422e3e", "aa43b41f"
+      ],
+      "question_count": 3,
+      "difficulty_spread": {"easy": 1, "medium": 0, "hard": 2},
+      "notes": "Three questions, each with a different type of sampling bias: (a) 9bf4c545: selection bias -- surveyed only dog owners about a dog park, not all residents; (b) 4a422e3e: convenience sampling -- surveyed families at a playground about children per household; (c) aa43b41f: voluntary response bias -- viewers of a cable news show self-selected to respond to an online poll. In each case, the correct answer identifies that the sample is not representative because it was not randomly drawn from the target population. The key cognitive demand is recognizing HOW the sample fails to represent the population."
+    },
+    {
+      "id": "ESC.3",
+      "name": "Understanding Sample Variability",
+      "definition": "Recognize that a sample statistic is an estimate of the population parameter, not an exact value, and that different random samples from the same population can yield different results.",
+      "inclusion_test": "Does the question present a sample result and ask whether specific statements about the exact population value or future sample results MUST be true? If the correct answer is that such statements are NOT guaranteed, it is ESC.3. If the question is about who the results apply to, it is ESC.1; if about a flawed method, ESC.2.",
+      "evidence_ids": [
+        "37930b2a", "642519d7"
+      ],
+      "question_count": 2,
+      "difficulty_spread": {"easy": 0, "medium": 2, "hard": 0},
+      "notes": "Only 2 questions, both medium difficulty, both with the same structure: a random sample yields X%, and the question asks whether (I) the population is exactly X%, and/or (II) another sample of the same size would also yield X%. The correct answer in both cases is 'neither must be true.' The cognitive demand is understanding sampling variability -- that a sample statistic is an estimate subject to random variation. This is thin as a sub-skill (only 2 questions), but it is conceptually distinct from ESC.1 (which assumes valid random sampling and asks about scope) and ESC.2 (which identifies flawed sampling). It tests a different facet: the inherent uncertainty of any sample result, even from a valid random sample."
+    }
+  ],
+  "proposed_clusters": [
+    {
+      "name": "Identify the sampled population",
+      "definition": "Determine the specific group from which the sample was actually drawn, distinguishing it from broader or narrower groups mentioned in the question.",
+      "evidence_ids": ["b4f5a7ca", "6fca0144", "7ce2830a", "1ea09200", "7d68096f", "82dfb646"]
+    },
+    {
+      "name": "Detect non-representative sampling",
+      "definition": "Recognize that a sample drawn from a convenience location, voluntary response, or non-random subgroup is not representative of the target population and will produce biased estimates.",
+      "evidence_ids": ["9bf4c545", "4a422e3e", "aa43b41f"]
+    },
+    {
+      "name": "Recognize inherent uncertainty in sampling",
+      "definition": "Understand that even a valid random sample gives an estimate, not an exact value, and that repeating the sampling process can yield different results.",
+      "evidence_ids": ["37930b2a", "642519d7"]
+    },
+    {
+      "name": "Resist over-generalization",
+      "definition": "Reject conclusions that extend beyond the population from which the sample was selected -- e.g., from one school to all schools, from dog owners to all residents, or from book-likers to all moviegoers.",
+      "evidence_ids": ["82dfb646", "9bf4c545", "7ce2830a", "6fca0144", "b4f5a7ca", "1ea09200"]
+    }
+  ],
+  "mapping_from_current": [],
+  "off_spec_patterns": [],
+  "unsupported_current_sub_skills": []
+}

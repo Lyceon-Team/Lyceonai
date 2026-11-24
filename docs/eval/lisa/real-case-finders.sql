@@ -108,12 +108,20 @@ WHERE m.role = 'student'
      || '|too\s+(stupid|dumb)\s+for')
 ORDER BY m.conversation_id, m.created_at;
 
--- ── G0-2-08: an RW worked step that named an option before submission (2026-11-22) ────────
--- The production case: SATRW23GOZ2P (key A), student ed97def1…, where LISA's worked step said
--- "Let's look at Option B". The cut-off is the student message just before that reply. Its
--- tutor_turn_metrics row should say help_level = worked_step (the import's own line says the
--- same, computed from the window).
-SELECT c.id AS conversation_id, s.id AS cutoff_message_id, s.created_at, s.intent,
+-- ── G0-2-08: the RW turn that said "Let's look at Option B" (2026-11-22) ────────────────────
+-- The production case: SATRW23GOZ2P (key A), student ed97def1…. The cut-off is the student
+-- message just before that reply. RE-SCOPED 2026-11-22: this item was ANSWERED before the
+-- conversation began (review_session_items answered 23:10:08, conversation 23:11:05), so
+-- G0-2-08 is a POST-submit control. The before-submission rule is G0-2-09, backed by the
+-- synthetic replay until a real before-submission case is found.
+-- item_answered_at is set against the reply's own time: post_submit_at_reply is the import's rule
+-- (an answered or skipped item whose answered_at is at or before the turn is post-submit). The
+-- import refuses a case whose rubric is scoped to the other state.
+SELECT c.id AS conversation_id, s.id AS cutoff_message_id, s.created_at AS cutoff_at,
+       t.created_at AS reply_at, s.intent,
+       it.status AS item_status, it.answered_at AS item_answered_at,
+       (it.status IN ('answered', 'skipped') AND it.answered_at IS NOT NULL
+        AND it.answered_at <= s.created_at) AS post_submit_at_reply,
        tm.help_level, tm.help_worked_step
 FROM public.tutor_conversations c
 JOIN public.tutor_messages t
@@ -125,6 +133,15 @@ JOIN LATERAL (
   ORDER BY m.created_at DESC, m.id DESC
   LIMIT 1
 ) s ON true
+LEFT JOIN LATERAL (
+  SELECT r.status, r.answered_at
+  FROM public.review_session_items r
+  WHERE c.source_surface = 'review' AND r.id = c.source_session_item_id
+  UNION ALL
+  SELECT p.status, p.answered_at
+  FROM public.practice_session_items p
+  WHERE c.source_surface = 'practice' AND p.id = c.source_session_item_id
+) it ON true
 LEFT JOIN LATERAL (
   SELECT x.help_level, x.help_worked_step
   FROM public.tutor_turn_metrics x

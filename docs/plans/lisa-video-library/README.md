@@ -209,3 +209,8 @@ Use the Session pooler connection string (Supabase: Connect → Session pooler),
 `db.<ref>.supabase.co`, which fails on IPv4 networks. The dry run on the proposal reads
 `230 rows to tag (187 with skills, 84 with methods, 150 with a format), 150 to approve`. A row
 approved without methods (the retag, if approved as is) needs `tag-videos.ts --methods` first.
+
+## Full tagging pass (2026-11-22)
+
+Every segment was tagged against the live taxonomy: two blind passes per domain, adjudication of the disagreements and an independent final verification. Everything is in `tagging-2026-11-22/`, starting with its README. The output is additive only: it never deletes or updates a tag, and no taxonomy ID is superseded (Karl, 2026-11-22).
+
