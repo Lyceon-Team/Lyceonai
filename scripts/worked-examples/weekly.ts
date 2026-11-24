@@ -66,7 +66,7 @@ import {
   unescapeMrkdwn,
 } from "../../shared/slack/client";
 import {
-  approvalFromRecord,
+  approvalForCommit,
   recordPosted,
   type ExampleApproval,
   type ExampleOnBranch,
@@ -83,7 +83,9 @@ import {
 import { titleTopic } from "../../shared/worked-examples/rules";
 import { buildPost, workedExampleCopy } from "./daily";
 import { composeExample } from "./generate";
-import { folderCommit, pullForCommit } from "./github";
+import { folderCommit, folderCommitRecord, pullForCommit } from "./github";
+import { checkContent } from "./check-content";
+import { admitExample, supabaseRowWriter } from "./weekly-admit";
 import { accessToken, chirpRequest, synthesize } from "./google-tts";
 import { KIT_DIR, ROOT, loadKit, type Kit } from "./kit";
 import { nodeFetch, videoSetSlackSteps } from "./post-to-slack";
@@ -367,32 +369,44 @@ function env(name: string): string {
   return v;
 }
 
+/**
+ * An example's approval from its folder commit on `social`: the scheduled task's
+ * `Authored-By: worked-examples-task` trailer (SCL-288), else Karl's merge from GitHub's record
+ * (GitHub is asked only when there is no trailer).
+ */
+function approvalOf(
+  content: string,
+  e: ExampleOnBranch,
+): ReturnType<typeof approvalForCommit> {
+  const sha = folderCommit(content, e.dir);
+  return approvalForCommit(
+    folderCommitRecord(content, sha),
+    (s) => pullForCommit(env("GITHUB_REPOSITORY"), s, env("GITHUB_TOKEN")),
+    process.env.CONTENT_APPROVER_LOGIN?.trim() || undefined,
+  );
+}
+
 async function approvalFor(
   content: string,
   e: ExampleOnBranch,
 ): Promise<ExampleApproval> {
-  const sha = folderCommit(content, e.dir);
-  const verdict = approvalFromRecord(
-    await pullForCommit(env("GITHUB_REPOSITORY"), sha, env("GITHUB_TOKEN")),
-    sha,
-    process.env.CONTENT_APPROVER_LOGIN?.trim() || undefined,
-  );
+  const verdict = await approvalOf(content, e);
   if (!verdict.ok) throw new Error(`not approved: ${verdict.reason}`);
   return verdict.approval;
+}
+
+/** The service-role client, from the scheduled run's environment only. */
+function serviceClient(): ReturnType<typeof createClient> {
+  return createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 }
 
 /** The private bucket through supabase-js, from the scheduled run's environment only. */
 function bucket(): ReturnType<
   ReturnType<typeof createClient>["storage"]["from"]
 > {
-  const client = createClient(
-    env("SUPABASE_URL"),
-    env("SUPABASE_SERVICE_ROLE_KEY"),
-    {
-      auth: { persistSession: false, autoRefreshToken: false },
-    },
-  );
-  return client.storage.from(SOCIAL_WEEKLY_BUCKET);
+  return serviceClient().storage.from(SOCIAL_WEEKLY_BUCKET);
 }
 
 /** Voices one example's lines in the batch voice through the cache (the scheduled run). */
@@ -455,6 +469,14 @@ async function build(f: Flags): Promise<void> {
   const kit = loadKit();
   const due = weekExamples(loadExamples(content), dates, loadPosted(content));
   const store = voiceMode === "batch" && !dryRun ? bucket() : null;
+  // SCL-288: every pull-request check (worked-example-checks.yml runs check-content.ts) on this
+  // checkout, once; each due example is refused on any problem of its own before anything else.
+  const checkProblems = checkContent(content);
+  // The approved row is written before rendering (the anti-leak half). A dry run has no secrets:
+  // it runs the checks and the admission, and writes no row.
+  const writeRow = dryRun
+    ? async () => ({ ok: true }) as const
+    : supabaseRowWriter(serviceClient());
   const plan: WeekPlan = {
     week,
     dates,
@@ -467,14 +489,24 @@ async function build(f: Flags): Promise<void> {
     const date = e.content.post_on;
     const dir = join(out, date);
     try {
-      const approval: ExampleApproval = dryRun
-        ? {
-            pr: 1,
-            mergedBy: "dry-run",
-            mergeSha: "0".repeat(40),
-            mergedAt: `${today}T00:00:00Z`,
-          }
-        : await approvalFor(content, e);
+      const admitted = await admitExample(e, {
+        checkProblems,
+        approve: dryRun
+          ? async () => ({
+              ok: true,
+              approval: {
+                pr: 1,
+                mergedBy: "dry-run",
+                mergeSha: "0".repeat(40),
+                mergedAt: `${today}T00:00:00Z`,
+              },
+            })
+          : (x) => approvalOf(content, x),
+        writeRow,
+        outroText: kit.voice.outro_text,
+      });
+      if (!admitted.ok) throw new Error(admitted.reason);
+      const approval: ExampleApproval = admitted.approval;
       const { problems, question } = exampleProblems(content, e, kit);
       if (problems.length > 0 || !question)
         throw new Error(problems.join("; "));

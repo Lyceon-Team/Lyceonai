@@ -23,7 +23,8 @@ Posting stays by hand from `#social`.
 | Content | `social`: `content/worked-examples/` | `STYLE.json`, `<YYYY-MM>-plan/plan.json`, `<YYYY-Www>/<QUESTION_ID>/example.json` + `voice/`, `posted.json` |
 | Asset kit | `video-kit/worked-examples/` | blank paper, Caveat + OFL, brand colours and fonts, the six templates, voice settings, music + licence |
 | PR check | `.github/workflows/worked-example-checks.yml` | every content rule on a pull request into `social` |
-| Weekly job | `.github/workflows/worked-example-daily.yml`, Thursday 16:15 UTC | builds next week's examples, uploads them to `social-weekly`, posts "Week <n> ready" (the daily 17:00 UTC job was retired 2026-11-14) |
+| Weekly task | a scheduled Claude task, Thursday 8:07 a.m. CT (14:07 UTC) | writes next week's examples and pushes them straight to `social` with the trailer `Authored-By: worked-examples-task` (Karl, 2026-11-24, SCL-288) |
+| Weekly job | `.github/workflows/worked-example-daily.yml`, Thursday 16:15 UTC | runs every PR check on each due example, writes its approved row, builds next week's examples, uploads them to `social-weekly`, posts "Week <n> ready" (the daily 17:00 UTC job was retired 2026-11-14) |
 | Database | `supabase/migrations/20261118000000_worked_examples.sql` | `worked_examples`, `worked_example_metrics`, `questions_with_usage`, the leak rule both ways |
 
 ## The monthly plan (a pull request into `social`)
@@ -32,7 +33,44 @@ Posting stays by hand from `#social`.
 `skill_code`, `hook_type`). Hook types rotate: no two consecutive slots share one, and a month of
 five or more slots uses all five (puzzle, obvious_answer_trap, speed, challenge, contrarian).
 
-## The weekly batch (a pull request into `social`, 3 examples)
+## Approval: the task's trailer, or Karl's merge (Karl's ruling 2026-11-24, SCL-288)
+
+Karl's merge is **no longer the approval**. A scheduled Claude task writes next week's examples on
+Thursday at 8:07 a.m. CT and pushes them straight to `social`, with this trailer as the last
+paragraph of the commit message:
+
+```
+Authored-By: worked-examples-task
+```
+
+The 16:15 UTC weekly job renders them the same day. Karl reviews them when he posts from Slack.
+
+- **Approved by the task:** the first-parent commit that last changed the example's folder on
+  `social` carries that trailer (read by git, so it must be a real trailer: the final paragraph,
+  `Key: value`). The approval is recorded as by "worked-examples-task", with that commit's sha and
+  date, in the post and in the row's `approved_by` / `approved_at`.
+- **Approved by Karl:** his merge of a pull request into `social` still approves, as before
+  (GitHub's record of the merge; the row says `approved_by` "Karl").
+- **Neither:** the example is refused and not rendered. A later change to the folder by a commit
+  with neither makes it unapproved again.
+- **Before anything is rendered, the weekly job, for each due example:**
+  1. runs everything `worked-example-checks.yml` runs on a pull request
+     (`check-content.ts` over the `social` checkout) and refuses the example on any problem with
+     its folder, its day, its month's plan, or a tree it cannot read;
+  2. checks the approval above;
+  3. writes the example's approved row (the same values `seed-sql.ts` prints) through the service
+     role. The table's trigger refuses an approved row whose question is in a full-length form or
+     a QOTD today or later, and from then on the QOTD scheduler and the full-length guard skip it.
+     A refused row refuses the example.
+
+  A refused example is named in "Week <n> ready" with its reason; the others are still delivered.
+- **The write needs `20261118000000_worked_examples.sql` live in production.** Without the table,
+  every example is refused at step 3. Confirm it from the catalog (`information_schema.tables`),
+  not the migration ledger.
+
+The pull-request route below still works: a batch Karl merges is approved by his merge.
+
+## The weekly batch (written by the task, or a pull request into `social`)
 
 1. Pick questions. Not allowed: a question in any full-length form, or one that is a QOTD today or
    later (the database refuses the approved row). Once an example is approved, its question can
@@ -79,10 +117,12 @@ five or more slots uses all five (puzzle, obvious_answer_trap, speed, challenge,
    Commit `voice/*.wav` and `voice/manifest.json`. Editing a line later re-voices only that line;
    a line whose text changed without re-voicing fails the check.
 5. Check locally: `pnpm exec tsx scripts/worked-examples/check-content.ts --content .`
-6. Open the pull request into `social`. Codex audits the maths and hook rules. **Karl's merge is
-   the approval** (read from GitHub's record of the merge; any later change to the folder that is
-   not Karl's merge makes it unapproved again).
-7. After the merge, generate the rows and hand them to Karl to apply:
+6. The scheduled task pushes to `social` with the `Authored-By: worked-examples-task` trailer and
+   the job approves it from that (above). By hand, open a pull request into `social` instead:
+   Karl's merge approves it (read from GitHub's record of the merge; any later change to the folder
+   that is neither Karl's merge nor a trailer commit makes it unapproved again).
+7. The weekly job writes the approved rows itself (SCL-288). To print them by hand (for a week the
+   job did not build, or to compare), the same values come from:
    `GITHUB_TOKEN=… GITHUB_REPOSITORY=Lyceon-Team/Lyceonai CONTENT_APPROVER_LOGIN=… pnpm exec tsx scripts/worked-examples/seed-sql.ts --content <social checkout> --week <YYYY-Www> > seed.sql`
 
 ## The weekly run (Karl's rulings 2026-11-11, SCL-277)
@@ -100,8 +140,10 @@ the QOTD job (`qotd-social.yml`) is separate and stays.
 - **Format:** the question on screen in frame 1; the spoken hook a dare or a shortcut promise; 30-60
   s; one problem; the answer near the end; one CTA (test variant: "Comment GRIND and I'll send you
   10 more hard ones", Karl sends by hand). SCL-267's script rules are unchanged.
-- **Stages** (`scripts/worked-examples/weekly.ts`): `build` (select the week's approved, unposted
-  examples that pass every rule; voice; layout/timing; composition) → per date: `hyperframes check`
+- **Stages** (`scripts/worked-examples/weekly.ts`): `build` (select the week's unposted examples;
+  for each, every pull-request check, then the approval (trailer or merge), then the approved row
+  written to the database (scripts/worked-examples/weekly-admit.ts, SCL-288); voice; layout/timing;
+  composition) → per date: `hyperframes check`
   and render, the final-mix limiter, the layout check, the MP4 check → `upload` → `claim` (pushed to
   `social` before announcing) → `announce`. An example that fails is named in the message with its
   reason; the others are still delivered.

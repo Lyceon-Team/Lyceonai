@@ -65,3 +65,35 @@ export function folderCommit(contentRoot: string, dir: string): string {
     },
   ).trim();
 }
+
+/**
+ * The folder commit's date and its `Authored-By:` trailer values, read by git from the commit
+ * message (the scheduled task's approval, SCL-288). Local only: the content checkout has full
+ * history (the weekly job checks `social` out with fetch-depth 0).
+ */
+export function folderCommitRecord(
+  contentRoot: string,
+  sha: string,
+): { sha: string; committedAt: string; authoredBy: string[] } {
+  const out = execFileSync(
+    "git",
+    [
+      "-C",
+      contentRoot,
+      "log",
+      "-1",
+      "--format=%cI%x00%(trailers:key=Authored-By,valueonly,separator=%x1f)",
+      sha,
+    ],
+    { encoding: "utf8" },
+  ).replace(/\n$/, "");
+  const [committedAt = "", trailers = ""] = out.split("\0");
+  return {
+    sha,
+    committedAt: committedAt.trim(),
+    authoredBy: trailers
+      .split("\x1f")
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0),
+  };
+}

@@ -1225,6 +1225,7 @@ jobs:
             tests/ci/guardian-denial-sweep.pg.ci.test.ts \
             tests/ci/guardian-invites.pg.ci.test.ts \
             tests/ci/guardian-invite-card.pg.ci.test.ts \
+            tests/ci/worked-examples-admit.pg.ci.test.ts \
             tests/ci/guardian-admin-denied.pg.ci.test.ts \
             tests/ci/feature-access-map.pg.ci.test.ts \
             tests/ci/crisis-review-queue.ephemeral-pg.proof.test.ts \
@@ -1315,6 +1316,7 @@ jobs:
             --file tests/ci/guardian-denial-sweep.pg.ci.test.ts \
             --file tests/ci/guardian-invites.pg.ci.test.ts \
             --file tests/ci/guardian-invite-card.pg.ci.test.ts \
+            --file tests/ci/worked-examples-admit.pg.ci.test.ts \
             --file tests/ci/guardian-admin-denied.pg.ci.test.ts \
             --file tests/ci/feature-access-map.pg.ci.test.ts \
             --file tests/ci/crisis-review-queue.ephemeral-pg.proof.test.ts \
