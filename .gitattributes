@@ -40,3 +40,10 @@ scripts/ci/fixtures/scoring-v1.0/** -text
 # their current treatment.
 docs/marketing/keyword-map/**/*.csv binary
 docs/marketing/keyword-map/**/*.xlsx binary
+
+# SCL register (docs/SpecAudit/SPEC_CHANGES_LOG.md). Closed to new entries on 2026-11-25: new
+# entries are one file each under docs/SpecAudit/scl/ (pnpm scl:new), so they never conflict.
+# Until every in-flight branch has moved over, a branch may still append here; `union` keeps
+# both sides' lines instead of stopping the merge on a conflict. A number collision this lets
+# through is flagged by scripts/ci/scl-duplicate-check.mjs (owner ruling 2026-11-25).
+docs/SpecAudit/SPEC_CHANGES_LOG.md merge=union

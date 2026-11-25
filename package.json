@@ -8,6 +8,7 @@
   },
   "packageManager": "pnpm@10.33.0",
   "scripts": {
+    "scl:new": "node scripts/scl/new.mjs",
     "dev": "cross-env NODE_ENV=development tsx --env-file=.env.local server/index.ts",
     "dev:server": "cross-env NODE_ENV=development tsx --env-file=.env.local server/index.ts",
     "dev:client": "vite",

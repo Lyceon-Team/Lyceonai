@@ -50,16 +50,21 @@ import type { EntitlementUpdate } from "../account";
 import { logger } from "../../logger";
 import { recordGuardianInviteCardFromSetupSession } from "../guardian-invite-card";
 import { digestId } from "./redact";
+import {
+  defaultBillingLapseDeps,
+  graceClearedWhenGoodStanding,
+  handleInvoicePaymentFailed,
+  handleInvoicePaymentSucceeded,
+  handleSubscriptionDeletedForLapse,
+  toLapseInvoice,
+} from "./billing-lapse";
 import { EntitlementService } from "../../services/entitlement-service";
 import {
   defaultLifecycleDeps,
   fireLifecycle,
   sendEntitledEvents,
 } from "../lifecycle-email";
-import {
-  classifyUpgradeVia,
-  fireUpgraded,
-} from "../analytics/funnel-events";
+import { classifyUpgradeVia, fireUpgraded } from "../analytics/funnel-events";
 import type { FunnelUpgradeVia } from "../../../packages/shared/src/funnel-events-schema";
 import { getTier1Countries } from "../entitlement-runtime-config";
 import {
@@ -852,6 +857,9 @@ async function writeEntitlementFromSubscription(
     current_period_start: epochToIso(item?.currentPeriodStart ?? null),
     current_period_end: epochToIso(item?.currentPeriodEnd ?? null),
     cancel_at_period_end: subscription.cancel_at_period_end === true,
+    // SCL-289 ruling 1: back in good standing ends the grace. Only cleared here, never set:
+    // a past_due write leaves the deadline the first failed payment set.
+    ...graceClearedWhenGoodStanding(subscription.status),
     // SCL-191: who is being charged, as a fact about our own entitlement rather than one that
     // lives only in Stripe metadata. NULL on the unaccompanied path, where payer and student are
     // the same profile — and NULL is the value the post-exam renewal flow reads as "self-paid",
@@ -1532,6 +1540,7 @@ async function writeEntitlementsForAllItems(
       current_period_start: epochToIso(item.current_period_start ?? null),
       current_period_end: epochToIso(item.current_period_end ?? null),
       cancel_at_period_end: subscription.cancel_at_period_end === true,
+      ...graceClearedWhenGoodStanding(subscription.status),
       // SCL-191. `payerProfileId` is already server-authorised above — every candidate was
       // checked against this guardian's ACTIVE links before any write — so recording it here adds
       // no trust, it records a decision this function has already made. The post-exam renewal
@@ -2658,6 +2667,44 @@ function refundNotAttempted(
 }
 
 async function dispatch(event: Stripe.Event): Promise<DispatchStatus> {
+  const status = await dispatchEvent(event);
+  /**
+   * SCL-289 (owner brief "Founding lapse flow", ruling 5): after the entitlement write, a cancel
+   * caused by non-payment sends the access-ended email. Run after, so the row it reads already
+   * says canceled; a self-cancel reaches here too and is left alone by the handler.
+   */
+  if (event.type === "customer.subscription.deleted") {
+    const lapse = await handleSubscriptionDeletedForLapse(
+      event.data.object,
+      defaultBillingLapseDeps,
+    );
+    // A refused send has released its claim; throwing makes Stripe redeliver, so it is retried.
+    // The canceled row is never revisited by the daily job, so this is the only retry it gets.
+    if (typeof lapse !== "string" && lapse.kind === "failed") {
+      throw new Error("billing lapse: access_ended event was not accepted");
+    }
+  }
+  return status;
+}
+
+async function dispatchEvent(event: Stripe.Event): Promise<DispatchStatus> {
+  /**
+   * SCL-289: the invoice side of a renewal. These write the grace deadline only, never the
+   * subscription status (§4.5's single writer is `customer.subscription.updated`).
+   */
+  if (event.type === "invoice.payment_failed") {
+    await handleInvoicePaymentFailed(
+      toLapseInvoice(event.data.object),
+      defaultBillingLapseDeps(),
+    );
+    return "processed";
+  }
+
+  if (event.type === "invoice.payment_succeeded") {
+    await handleInvoicePaymentSucceeded(toLapseInvoice(event.data.object));
+    return "processed";
+  }
+
   if (event.type === "customer.deleted") {
     await handleCustomerDeleted(event);
     return "processed";

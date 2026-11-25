@@ -187,17 +187,21 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(r.rows[0].n).toBe(1);
     });
 
-    it("C1.7 — the predicate reads only status, which is what makes UPDATE OF status sufficient", async () => {
+    it("C1.7 — the trigger fires on every column the predicate reads (status and the grace deadline)", async () => {
       // The trigger's column list is coupled to the predicate's body. If the
-      // predicate grows to read `tier`, `UPDATE OF status` stops covering it
-      // and the promise silently stops being kept. This asserts the coupling
-      // still holds rather than trusting a comment.
+      // predicate grows to read a column the trigger does not list, a write to
+      // that column changes the answer without re-syncing the conversations.
+      // Since SCL-289 the predicate also reads `grace_period_ends_at`, so the
+      // trigger lists it too (migration 20261211000000); the deadline passing,
+      // which is not a write, is covered by the billing-lapse job rewriting each
+      // expired deadline (`touchExpiredDeadline`).
       const p = await pg.query(
         `SELECT prosrc FROM pg_proc WHERE proname = 'entitlement_active'`,
       );
       expect(p.rows).toHaveLength(1);
       const src = p.rows[0].prosrc as string;
       expect(src).toMatch(/\bstatus\b/);
+      expect(src).toMatch(/\bgrace_period_ends_at\b/);
       expect(src).not.toMatch(/\btier\b/);
 
       const t = await pg.query(
@@ -208,7 +212,10 @@ describe.skipIf(!PG_AVAILABLE)(
           WHERE tg.tgrelid = 'public.entitlements'::regclass
             AND tg.tgname = 'entitlements_sync_tutor_conversations'`,
       );
-      expect(t.rows.map((r) => r.attname)).toEqual(["status"]);
+      expect(t.rows.map((r) => r.attname).sort()).toEqual([
+        "grace_period_ends_at",
+        "status",
+      ]);
     });
 
     it("C1.8 — the trigger calls the canonical predicate, not a re-listed status set", async () => {

@@ -384,9 +384,11 @@ describe("Stripe webhook handler contract", () => {
     const { body, signature } = signedRequest({
       id: "evt_unhandled_1",
       object: "event",
-      type: "invoice.payment_succeeded",
+      // An event still IGNORED. `invoice.payment_succeeded` was the example until SCL-289
+      // made it HANDLED (it clears the grace deadline).
+      type: "promotion_code.updated",
       livemode: false,
-      data: { object: { id: "in_1" } },
+      data: { object: { id: "promo_1" } },
     });
 
     const outcome = await process_(body, signature);

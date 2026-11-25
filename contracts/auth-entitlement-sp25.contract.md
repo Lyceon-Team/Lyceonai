@@ -64,6 +64,15 @@ State-vocabulary mapping (Doc 01 V8 §22 → genesis `(tier,status)`): `premium_
 > access-ended. **No temporal arm; E3 stands.** The §21/Appendix C temporal logic is a spec artifact
 > reconciled owner-side (WS-S, `docs/Spec` read-only). The entitled set is now fully locked.
 
+> **SCL-289 (Karl, 2026-11-24) — the grace deadline.** The entitled set is unchanged, but `past_due`
+> now carries Doc 01 §21's deadline: it is entitled only while `grace_period_ends_at` is NULL or in
+> the future. Migration `20261211000000_billing_lapse.sql` redefines the function as
+> `status IN ('active','trialing') OR (status = 'past_due' AND (grace_period_ends_at IS NULL OR
+> grace_period_ends_at > now()))`. The first failed payment sets the deadline (now + 7 days, only
+> when NULL); a NULL deadline keeps Pro until the daily billing-lapse job sets it from the earliest
+> unpaid invoice; it is cleared when the subscription is active again. Every reader calls this one
+> function, so none of them changes.
+
 ## 2. The TS consumer — one definition, asserted identical
 
 The TS route layer MUST NOT re-derive entitlement. It resolves entitlement through the **one**

@@ -533,7 +533,13 @@ export async function getEntitlementsBySubscriptionId(
  * build an update in one place and apply it in another (the dispute/refund
  * fan-out) can name the type instead of widening it to a string.
  */
-export type EntitlementUpdate = Partial<Omit<Entitlement, "profile_id">>;
+export type EntitlementUpdate = Partial<Omit<Entitlement, "profile_id">> & {
+  /**
+   * SCL-289: the past_due grace deadline. Only ever CLEARED through this path (a subscription
+   * back in good standing); it is SET by server/lib/stripe/billing-lapse.ts alone.
+   */
+  grace_period_ends_at?: null;
+};
 
 export async function upsertEntitlement(
   profileId: string,

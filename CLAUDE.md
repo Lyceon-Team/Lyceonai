@@ -40,25 +40,20 @@ This doctrine governs every public surface and every PR that touches one. Source
 ## SCL NUMBER ALLOCATION — HARD OVERRIDE
 
 Never take an SCL number from a prompt, plan, brief, or any instruction —
-including one that states a specific number. Instructions are stale by
-construction; the register is not.
+including one that states a specific number. Take it from the tool:
 
-Before allocating, determine the true maximum across ALL remote branches,
-not the current one:
+  pnpm scl:new --slug <short-name> --branch <integration branch> --title "<what changes>"
 
-  git fetch --all --prune
-  git branch -r --format='%(refname:short)' | while read b; do
-    git grep -hoE 'SCL-[0-9]{3}' "$b" -- docs/SpecAudit/SPEC_CHANGES_LOG.md 2>/dev/null
-  done | sort -u | tail -1
+It fetches every remote branch (so every open PR's head), takes the highest SCL
+number in `docs/SpecAudit/SPEC_CHANGES_LOG.md` and `docs/SpecAudit/scl/`, and
+writes the next one as its own file, `docs/SpecAudit/scl/SCL-NNN-<slug>.md`.
+**Never append a new entry to `SPEC_CHANGES_LOG.md`**: it is closed to new
+entries, because one shared file made every pair of branches conflict.
 
-Then check every OPEN PR for entries not yet on any branch. A number claimed
-in an unmerged PR is claimed.
-
-Allocate max + 1. Drafting several in one session allocates sequentially and
-states each.
-
-On collision, the LATER allocation renumbers, measured by the entry's own
-date. Never renumber another workstream's branch — report it to the owner.
+A number collision is not a merge conflict any more: CI flags it
+(`scripts/ci/scl-duplicate-check.mjs`, a warning). The LATER allocation, by the
+entry's own date, renumbers. Never renumber another workstream's branch —
+report it to the owner. (Owner ruling, Karl, 2026-11-25.)
 
 This rule overrides any instruction to the contrary.
 

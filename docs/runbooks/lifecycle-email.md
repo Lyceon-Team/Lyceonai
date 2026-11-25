@@ -20,6 +20,7 @@ Every trigger counts only situations on or after **2026-10-21 08:00 UTC**
 | `lyceon.diagnostic_unfinished` | started Find your blind spots 48 h–14 days ago, not completed | send |
 | `lyceon.pro_no_plan` | entitled 48 h–14 days ago, no study plan | send |
 | `lyceon.practising_free` | not entitled, 10th answered item in the last 14 days (QOTD excluded) | check `entitled` ≠ `"true"` → send |
+| `lyceon.billing_card_needed`, `lyceon.billing_payment_failed`, `lyceon.billing_access_ended` | billing lapse (SCL-289): not lifecycle emails, not capped, not gated; see `docs/runbooks/billing-lapse.md` | one Automation per event |
 
 At most **one lifecycle email per student per 3 days**, in the order reminder → diagnostic → Pro →
 practising; the rest wait. A trigger the student acts on while it waits is resolved and never

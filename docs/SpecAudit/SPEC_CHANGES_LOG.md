@@ -80,28 +80,26 @@ authorised: authorisation is not application.
 Do not invent a sixth value; if none of these five fits, say so and ask the
 owner rather than coining one.
 
-## SCL NUMBER ALLOCATION — HARD OVERRIDE
+## SCL NUMBER ALLOCATION — `pnpm scl:new`
 
-Never take an SCL number from a prompt, plan, brief, or any instruction —
-including one that states a specific number. Instructions are stale by
-construction; the register is not.
+Owner ruling, Karl, 2026-11-25. This replaces the hand-run allocation procedure that stood here.
 
-Before allocating, determine the true maximum across ALL remote branches,
-not the current one:
+New entries are NOT appended to this file. Each new entry is its own file,
+`docs/SpecAudit/scl/SCL-NNN-<slug>.md`, written by:
 
-  git fetch --all --prune
-  git branch -r --format='%(refname:short)' | while read b; do
-    git grep -hoE 'SCL-[0-9]{3}' "$b" -- docs/SpecAudit/SPEC_CHANGES_LOG.md 2>/dev/null
-  done | sort -u | tail -1
+  pnpm scl:new --slug <short-name> --branch <integration branch> --title "<what changes>"
 
-Then check every OPEN PR for entries not yet on any branch. A number claimed
-in an unmerged PR is claimed.
+It runs `git fetch --all --prune`, takes the highest SCL number on EVERY remote branch (that
+includes the head branch of every open pull request) in this file and in `scl/`, and writes
+the next number into a new file with the heading and the integration branch the change belongs
+to. Never take an SCL number from a prompt, plan or brief; take it from the tool.
 
-Allocate max + 1. Drafting several in one session allocates sequentially and
-states each.
-
-On collision, the LATER allocation renumbers, measured by the entry's own
-date. Never renumber another workstream's branch — report it to the owner.
+Why: every entry appended to the end of this one file, so any two branches that each added an
+entry conflicted in git, every time. Separate files never conflict. Two branches that still pick
+the same number get two differently named files: no conflict, and CI FLAGS it
+(`scripts/ci/scl-duplicate-check.mjs`, a warning, not a failed build). The LATER allocation, by
+the entry's own date, renumbers (`pnpm scl:new` again, rename the file). Never renumber another
+workstream's branch — report it to the owner.
 
 This rule overrides any instruction to the contrary.
 
@@ -131,6 +129,10 @@ This rule overrides any instruction to the contrary.
 ---
 
 ## Entries
+
+CLOSED TO NEW ENTRIES, 2026-11-25 (owner ruling): entries up to SCL-289 are below; every later
+entry is a file in `docs/SpecAudit/scl/` (see SCL NUMBER ALLOCATION above). Both together are the
+register.
 
 SCL-080 | 2026-09-01 | Doc 01 V8 §36.1's two email-addressed initiation paths and §36.2's email-scoped abuse controls are replaced by a student-issued link code with no acceptance step | PROPOSED
 Change: linking stops being an invitation that a second party accepts and becomes a credential the student holds and shares. The student's account carries a short code; a guardian enters it; the link is `active` on that request. There is no pending state, no acceptance screen, and no email in the mechanism. §36.1 specifies the opposite in both of its paths, and §36.2's two abuse controls are written against an email address that this flow never collects, so both sections change.
@@ -5756,3 +5758,13 @@ Owner rulings (Karl, 2026-11-24, on #1533): (a) the trailer is a claim any pushe
 Owner action: fold this entry into Doc 10B §2 and §8.
 Build artifact: `scripts/worked-examples/approval.ts` (`approvalFromTrailer`, `approvalForCommit`); `scripts/worked-examples/github.ts` (`folderCommitRecord`); `scripts/worked-examples/weekly-admit.ts`; `scripts/worked-examples/weekly.ts` (`build`, `approvalFor`); `scripts/worked-examples/seed-sql.ts` (`seedRowValues`); `packages/shared/src/worked-example-schema.ts` (`workedExampleApprovalSchema`); `docs/runbooks/worked-examples.md`; tests `tests/ci/weekly-pipeline.test.ts` AP1-AP4, AD0-AD5, `tests/ci/worked-examples-admit.pg.ci.test.ts` DB1-DB2; plants T74-T77 in `scripts/ci/worked-examples.mutations.sh`.
 Id: `SCL-288` derived at the moment of use, 2026-11-24, after `git fetch --all --prune`, by `git grep -hoE 'SCL-[0-9]{3}' <ref> -- docs/SpecAudit/SPEC_CHANGES_LOG.md` across every remote ref: the highest allocated anywhere is `SCL-287`. Every open PR's head is a remote branch, so no unmerged claim is missed.
+
+SCL-289 | 2026-11-24 | Implements Doc 01 §21/§22.1/§23's past_due grace with owner rulings: a failed renewal sets a fixed 7-day deadline that `entitlement_active` honours, members with no card are warned before the first charge, and the subscription is cancelled when the deadline passes unpaid | OPEN
+Status: OPEN. Owner brief "Founding lapse flow" (Karl, 2026-11-24) and its rulings 1-8: send a pre-lapse email cadence; a failed payment gets 3 tries, then the subscription is cancelled; clear the deadline on `subscription.updated` → active and on `invoice.payment_succeeded`; a past_due row with no deadline keeps Pro until the job sets it; reminders to every subscription with no default payment method and a next invoice over $0; `amount` from Stripe's upcoming-invoice preview; `access_ended` only on a payment-caused cancel; skip under-13 payers; skip subscriptions set to cancel at period end.
+WAS: `entitlement_active` counted `past_due` with no deadline; `grace_period_ends_at` had no writer; `invoice.payment_failed` and `invoice.payment_succeeded` were ignored (event-surface.ts); no email before a first charge or after a failed one.
+IS: (1) `entitlement_active` = `status IN ('active','trialing') OR (status = 'past_due' AND (grace_period_ends_at IS NULL OR grace_period_ends_at > now()))` (migration `20261211000000_billing_lapse.sql`); every reader calls it. (2) `invoice.payment_failed` sets `grace_period_ends_at = now + 7 days` only when NULL and, for attempts 1-3, emits `lyceon.billing_payment_failed` {attempt, grace_ends_on, amount, currency, add_card_url, invoice_url}. (3) `invoice.payment_succeeded`, and a subscription written as `active` or `trialing`, clear it. (4) A daily job (`GET /api/internal/billing-lapse`, `30 20 * * *`) emits `lyceon.billing_card_needed` {days_left, invoice_date, amount, currency, add_card_url} in the 14/7/2-day bands, gives undated past_due rows their deadline (earliest unpaid invoice + 7 days), and cancels in Stripe every subscription whose deadline has passed unpaid. (5) `lyceon.billing_access_ended` {ended_on, reason: "payment_failed"} on that cancel or on Stripe's own cancel with `cancellation_details.reason = payment_failed`, never on a self-cancel. (6) `billing_lapse_notices` makes every email once per subscription and milestone. Subscription status still has one writer (`customer.subscription.updated`, §4.5): the invoice events write only the deadline.
+Preserves: account, progress and free-tier access after a cancel; payment ≠ permissions (the deadline is server-side only); under-13 rules (no event, no contact); billing emails are always category (never held by the send gate); the self-cancel confirmation (SCL-271) unchanged.
+Disclosure: none new (Billing Terms and the Auto-Renewal Notice already describe failed payments and cancellation); Karl to confirm.
+Owner action: see the PR's "Owner actions, in order" and `docs/runbooks/billing-lapse.md`.
+Build artifact: `supabase/migrations/20261211000000_billing_lapse.sql`; `server/lib/stripe/billing-lapse.ts`; `packages/shared/src/billing-lapse-schema.ts`; `server/lib/lifecycle-email.ts` (`sendBillingEvent`); `server/lib/stripe/webhook-handler.ts`, `event-surface.ts`, `entitlement-paths.ts`; `server/routes/internal-cron-routes.ts`; `vercel.json`; `contracts/auth-entitlement-sp25.contract.md`; `scripts/ci/genesis-schema.expected.sql`; tests `tests/ci/billing-lapse.pg.ci.test.ts` and the re-pointed `entitlement.status-parity`, `stripe-surface-boundary`, `stripe-webhook`, `stripe-webhook-disposition`, `vercel-cron-schedules` tests.
+Id: `SCL-289` derived at the moment of use, 2026-11-24, after `git fetch --all --prune`, by `git grep -hoE 'SCL-[0-9]{3}' <ref> -- docs/SpecAudit/SPEC_CHANGES_LOG.md` across every remote ref: the highest allocated anywhere is `SCL-288` (`claude/worked-examples-task-approval`, #1533). Every open PR's head is a remote branch of this repository, so no unmerged claim is missed. One entry allocated.
