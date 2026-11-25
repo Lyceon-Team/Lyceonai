@@ -73,22 +73,21 @@ function maxIn(text) {
   return max;
 }
 
+/** `git` output, or null when the object does not exist on that ref (an expected absence). */
+function gitOrNull(args) {
+  try {
+    return git(args);
+  } catch {
+    // The ref predates the register or the scl/ folder: it claims no number there.
+    return null;
+  }
+}
+
 /** Highest SCL number on one ref: legacy register headings and scl/ file names. */
 function maxOnRef(ref) {
-  let max = 0;
-  try {
-    max = maxIn(git(["show", `${ref}:${LEGACY}`]));
-  } catch {
-    // The ref predates the register or never had it: it claims no number there.
-    max = 0;
-  }
-  let names = "";
-  try {
-    names = git(["ls-tree", "--name-only", `${ref}:${DIR}`]);
-  } catch {
-    // The ref predates the scl/ folder: it claims no number there.
-    names = "";
-  }
+  const register = gitOrNull(["show", `${ref}:${LEGACY}`]);
+  let max = register === null ? 0 : maxIn(register);
+  const names = gitOrNull(["ls-tree", "--name-only", `${ref}:${DIR}`]) ?? "";
   for (const name of names.split("\n")) {
     const m = FILENAME.exec(name.trim());
     if (m) max = Math.max(max, Number(m[1]));
