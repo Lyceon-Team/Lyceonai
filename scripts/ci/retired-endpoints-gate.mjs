@@ -260,6 +260,10 @@ const DEFAULT_PATHSPEC = [
   ".",
   ":(exclude)docs/Spec/**",
   ":(exclude)audit-out/**",
+  // The SCL register's continuation: one file per entry since 2026-11-25 (pnpm scl:new). Same
+  // reason SPEC_CHANGES_LOG.md is in SELF_REFERENTIAL: an entry records history, retired paths
+  // included, and editing one to satisfy this gate would falsify the record.
+  ":(exclude)docs/SpecAudit/scl/**",
   ":(exclude)**/node_modules/**",
   ":(exclude)dist/**",
   ...BINARY_EXTENSIONS.map((ext) => `:(exclude)*.${ext}`),

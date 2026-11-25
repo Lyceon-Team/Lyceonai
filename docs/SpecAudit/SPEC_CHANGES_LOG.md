@@ -80,28 +80,26 @@ authorised: authorisation is not application.
 Do not invent a sixth value; if none of these five fits, say so and ask the
 owner rather than coining one.
 
-## SCL NUMBER ALLOCATION — HARD OVERRIDE
+## SCL NUMBER ALLOCATION — `pnpm scl:new`
 
-Never take an SCL number from a prompt, plan, brief, or any instruction —
-including one that states a specific number. Instructions are stale by
-construction; the register is not.
+Owner ruling, Karl, 2026-11-25. This replaces the hand-run allocation procedure that stood here.
 
-Before allocating, determine the true maximum across ALL remote branches,
-not the current one:
+New entries are NOT appended to this file. Each new entry is its own file,
+`docs/SpecAudit/scl/SCL-NNN-<slug>.md`, written by:
 
-  git fetch --all --prune
-  git branch -r --format='%(refname:short)' | while read b; do
-    git grep -hoE 'SCL-[0-9]{3}' "$b" -- docs/SpecAudit/SPEC_CHANGES_LOG.md 2>/dev/null
-  done | sort -u | tail -1
+  pnpm scl:new --slug <short-name> --branch <integration branch> --title "<what changes>"
 
-Then check every OPEN PR for entries not yet on any branch. A number claimed
-in an unmerged PR is claimed.
+It runs `git fetch --all --prune`, takes the highest SCL number on EVERY remote branch (that
+includes the head branch of every open pull request) in this file and in `scl/`, and writes
+the next number into a new file with the heading and the integration branch the change belongs
+to. Never take an SCL number from a prompt, plan or brief; take it from the tool.
 
-Allocate max + 1. Drafting several in one session allocates sequentially and
-states each.
-
-On collision, the LATER allocation renumbers, measured by the entry's own
-date. Never renumber another workstream's branch — report it to the owner.
+Why: every entry appended to the end of this one file, so any two branches that each added an
+entry conflicted in git, every time. Separate files never conflict. Two branches that still pick
+the same number get two differently named files: no conflict, and CI FLAGS it
+(`scripts/ci/scl-duplicate-check.mjs`, a warning, not a failed build). The LATER allocation, by
+the entry's own date, renumbers (`pnpm scl:new` again, rename the file). Never renumber another
+workstream's branch — report it to the owner.
 
 This rule overrides any instruction to the contrary.
 
@@ -131,6 +129,10 @@ This rule overrides any instruction to the contrary.
 ---
 
 ## Entries
+
+CLOSED TO NEW ENTRIES, 2026-11-25 (owner ruling): entries up to SCL-289 are below; every later
+entry is a file in `docs/SpecAudit/scl/` (see SCL NUMBER ALLOCATION above). Both together are the
+register.
 
 SCL-080 | 2026-09-01 | Doc 01 V8 §36.1's two email-addressed initiation paths and §36.2's email-scoped abuse controls are replaced by a student-issued link code with no acceptance step | PROPOSED
 Change: linking stops being an invitation that a second party accepts and becomes a credential the student holds and shares. The student's account carries a short code; a guardian enters it; the link is `active` on that request. There is no pending state, no acceptance screen, and no email in the mechanism. §36.1 specifies the opposite in both of its paths, and §36.2's two abuse controls are written against an email address that this flow never collects, so both sections change.

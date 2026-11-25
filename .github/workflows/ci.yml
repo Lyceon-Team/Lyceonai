@@ -217,14 +217,10 @@ jobs:
           node scripts/ci/nested-anchor-gate.mjs --selftest
           node scripts/ci/nested-anchor-gate.mjs
 
-      # No SCL id may head two entries in the register. Collisions keep reaching
-      # it — SCL-021, SCL-024, SCL-042, SCL-043, and SCL-171/SCL-172 twice over
-      # on 2026-09-26 — despite every author having read the register first.
-      # Reading does not reserve a number, so only a mechanical check closes the
-      # same-day race. The allowlist inside the script is now EMPTY: every
-      # pre-existing collision was renumbered on 2026-09-26, so the register has
-      # no duplicate heading at all and ANY duplicate fails here on its first
-      # appearance.
+      # An SCL id that heads two entries (in SPEC_CHANGES_LOG.md or docs/SpecAudit/scl/) is
+      # FLAGGED as a warning annotation, never a failed build (owner ruling 2026-11-25: "just
+      # data keeping and data tracking"). New entries are one file each via `pnpm scl:new`, so
+      # branches no longer conflict over the register; this catches the same-day number race.
       # §17.1's band is Doc 05C's, summed. The selftest runs FIRST and on its own line: a
       # gate whose matcher has rotted reports zero findings and reads exactly like a clean
       # tree.
@@ -234,7 +230,7 @@ jobs:
           node scripts/ci/calendar-projection-gate.mjs --selftest
           node scripts/ci/calendar-projection-gate.mjs
 
-      - name: SCL register — no duplicate ids
+      - name: SCL register — flag duplicate ids (warning only, owner ruling 2026-11-25)
         run: node scripts/ci/scl-duplicate-check.mjs
 
       # Doc 10B §5 gates 6 and 8 (Vale: Microsoft at error level plus ai-tells, pinned; every link
