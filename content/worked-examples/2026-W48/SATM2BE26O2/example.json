@@ -1,0 +1,142 @@
+{
+  "question_id": "SATM2BE26O2",
+  "skill_code": "Right Triangles and Trigonometry",
+  "post_on": "2026-11-27",
+  "hook": {
+    "type": "challenge",
+    "line": "A 26-foot ladder, and cos θ = 5/13. How high up the wall?",
+    "voice": "Think you can climb this one in under a minute? Let's see."
+  },
+  "question_voice": "A ladder leaning on a wall, and we want how high its top end reaches.",
+  "signature_move": "Label the sides from the angle: opposite, adjacent, hypotenuse. Then pick the ratio (SOH CAH TOA).",
+  "steps": [
+    {
+      "notepad": "cos θ = adjacent / hypotenuse",
+      "voice": "Cosine is adjacent over hypotenuse. The angle sits on the ground, so adjacent is the ground side."
+    },
+    {
+      "notepad": "ground = 26 · 5/13 = 10",
+      "voice": "The ladder is the hypotenuse, twenty-six. Five thirteenths of that is ten. That's along the ground."
+    },
+    {
+      "notepad": "wall = √(26² − 10²)",
+      "voice": "The height up the wall is the other leg. Pythagoras."
+    },
+    {
+      "notepad": "= √576 = 24",
+      "voice": "Six hundred seventy-six minus one hundred is five hundred seventy-six. The square root of that is twenty-four."
+    }
+  ],
+  "answer": {
+    "letter": "C",
+    "notepad": "Answer: C) 24",
+    "voice": "Twenty-four feet. That's C. Quick check: ten, twenty-four, twenty-six is the five, twelve, thirteen triangle, doubled."
+  },
+  "trap": {
+    "summary": "Stopping at the side cosine gives (10, along the ground) and choosing A.",
+    "notepad": [
+      "26 · 5/13 = 10 → A ✗",
+      "10 is the ground",
+      "wall = 24 ✓"
+    ],
+    "voice": "The trap is stopping at ten. Cosine gave you the side on the ground, not the wall. That's A, and it's the wrong side."
+  },
+  "check": "10² + 24² = 100 + 576 = 676 = 26².",
+  "takeaway": "Cosine gives the side next to the angle; the wall is the other leg.",
+  "figure": {
+    "box": {
+      "x": [
+        -5,
+        17
+      ],
+      "y": [
+        -3,
+        27
+      ]
+    },
+    "shapes": [
+      {
+        "kind": "segment",
+        "from": [
+          -3,
+          0
+        ],
+        "to": [
+          14,
+          0
+        ]
+      },
+      {
+        "kind": "segment",
+        "from": [
+          10,
+          0
+        ],
+        "to": [
+          10,
+          26
+        ]
+      },
+      {
+        "kind": "segment",
+        "from": [
+          0,
+          0
+        ],
+        "to": [
+          10,
+          24
+        ]
+      },
+      {
+        "kind": "right_angle",
+        "vertex": [
+          10,
+          0
+        ],
+        "a": [
+          0,
+          0
+        ],
+        "b": [
+          10,
+          24
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "26",
+        "at": [
+          3.2,
+          14
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "θ",
+        "at": [
+          2.6,
+          1.6
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "10",
+        "at": [
+          5,
+          -2.2
+        ],
+        "when": "step-2"
+      },
+      {
+        "kind": "label",
+        "text": "24",
+        "at": [
+          12.6,
+          12
+        ],
+        "when": "step-4"
+      }
+    ]
+  }
+}

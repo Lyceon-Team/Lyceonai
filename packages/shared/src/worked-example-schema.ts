@@ -401,6 +401,51 @@ export type WorkedExampleStyle = z.infer<typeof workedExampleStyleSchema>;
 export const WORKED_EXAMPLE_TITLE_MAX = 90;
 
 /**
+ * Who approved a worked example for rendering.
+ *
+ * @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27): "Karl merges";
+ *       Karl's ruling "Worked examples: drop the merge gate" (2026-11-24, SCL-288): a scheduled
+ *       Claude task writes next week's examples and pushes them straight to `social` with the
+ *       trailer `Authored-By: worked-examples-task`; Karl's merge is no longer the approval]
+ *       | @implemented [2026-10-27; task approval 2026-11-24]
+ *
+ * plain English: either Karl's merge of the pull request that last changed the example's folder
+ * (GitHub's record: the PR, who merged it, the merge commit and when), or the scheduled task's
+ * commit that carries the trailer (who, the commit and when). The QOTD breakdowns are approved by
+ * merge only and use the merge shape.
+ */
+export const WORKED_EXAMPLES_TASK = "worked-examples-task";
+
+export const workedExampleMergeApprovalSchema = z
+  .object({
+    pr: z.number().int().positive(),
+    mergedBy: z.string().min(1),
+    mergeSha: z.string().regex(/^[0-9a-f]{40}$/),
+    mergedAt: z.string().min(1),
+  })
+  .strict();
+export type WorkedExampleMergeApproval = z.infer<
+  typeof workedExampleMergeApprovalSchema
+>;
+
+export const workedExampleTaskApprovalSchema = z
+  .object({
+    by: z.literal(WORKED_EXAMPLES_TASK),
+    sha: z.string().regex(/^[0-9a-f]{40}$/),
+    at: z.string().min(1),
+  })
+  .strict();
+export type WorkedExampleTaskApproval = z.infer<
+  typeof workedExampleTaskApprovalSchema
+>;
+
+export const workedExampleApprovalSchema = z.union([
+  workedExampleMergeApprovalSchema,
+  workedExampleTaskApprovalSchema,
+]);
+export type WorkedExampleApproval = z.infer<typeof workedExampleApprovalSchema>;
+
+/**
  * The Slack set for one example (post.json, written by the daily job only after every check).
  *
  * @spec [SCL-265 (Karl's ruling 2026-11-02): the worked-example set in the SCL-262 format: one
@@ -436,14 +481,8 @@ export const workedExamplePostSchema = z
     warnings: z.array(z.string().min(1)),
     /** The tagged /start links: kept for the run's download, never posted (SCL-262). */
     links: socialStartLinksSchema,
-    approval: z
-      .object({
-        pr: z.number().int().positive(),
-        mergedBy: z.string().min(1),
-        mergeSha: z.string().regex(/^[0-9a-f]{40}$/),
-        mergedAt: z.string().min(1),
-      })
-      .strict(),
+    /** Karl's merge, or (from 2026-11-24, SCL-288) the scheduled task's trailer commit. */
+    approval: workedExampleApprovalSchema,
   })
   .strict()
   .superRefine((post, ctx) => {

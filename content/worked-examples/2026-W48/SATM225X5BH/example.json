@@ -1,0 +1,46 @@
+{
+  "question_id": "SATM225X5BH",
+  "skill_code": "Linear Equations in One Variable",
+  "post_on": "2026-11-29",
+  "hook": {
+    "type": "obvious_answer_trap",
+    "line": "Most people spot the 7 and say b = 7. Are they right?",
+    "voice": "Most people get this one wrong in about two seconds. Can you get it right?"
+  },
+  "question_voice": "An equation with two unknown constants that's true for every x, and we want b.",
+  "signature_move": "Distribute, collect like terms, then answer exactly what's asked.",
+  "steps": [
+    {
+      "notepad": "2ax + 7a + 5x = 11x + b",
+      "voice": "Distribute the a first. Two a x, plus seven a, plus five x."
+    },
+    {
+      "notepad": "x terms: 2a + 5 = 11 → a = 3",
+      "voice": "True for every x means the x parts match. Two a plus five is eleven, so a is three."
+    },
+    {
+      "notepad": "numbers: 7a = b",
+      "voice": "And the plain numbers have to match too. Seven a equals b."
+    },
+    {
+      "notepad": "b = 7 · 3 = 21",
+      "voice": "Seven times three. Twenty-one."
+    }
+  ],
+  "answer": {
+    "letter": "C",
+    "notepad": "Answer: C) 21",
+    "voice": "b is twenty-one. That's C. Quick check: with a equal to three, the left side becomes eleven x plus twenty-one, same as the right."
+  },
+  "trap": {
+    "summary": "Reading the 7 inside the parentheses as b, forgetting that it is multiplied by a, and choosing 7.",
+    "notepad": [
+      "b = 7 → B ✗",
+      "the 7 gets multiplied by a",
+      "b = 7a = 21 ✓"
+    ],
+    "voice": "The trap is grabbing the seven. It sits inside the brackets, so it gets multiplied by a. That's B, off by a factor of three."
+  },
+  "check": "With a = 3: 3(2x + 7) + 5x = 11x + 21, the right side exactly when b = 21.",
+  "takeaway": "Infinitely many solutions: match the x parts and the plain numbers."
+}

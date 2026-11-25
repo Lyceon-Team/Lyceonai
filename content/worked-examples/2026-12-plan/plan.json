@@ -1,0 +1,15 @@
+{
+  "month": "2026-12",
+  "slots": [
+    {
+      "post_on": "2026-12-02",
+      "skill_code": "Nonlinear Functions",
+      "hook_type": "speed"
+    },
+    {
+      "post_on": "2026-12-04",
+      "skill_code": "Area and Volume",
+      "hook_type": "puzzle"
+    }
+  ]
+}

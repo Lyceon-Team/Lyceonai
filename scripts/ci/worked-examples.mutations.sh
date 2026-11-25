@@ -22,6 +22,8 @@
 # T58-T60 Karl's cover-card ruling (same day): the cover card and its 4:5 zone; T61-T67 Karl's fix
 # of the same day: separate equations on separate lines (the card's rendering, E1, E2); T68-T73
 # Karl's YouTube Shorts block of the same day (from W48, no answer, the youtube/shorts link);
+# T74-T77 Karl's ruling of 2026-11-24, SCL-288: the merge gate dropped (the scheduled task's
+# trailer approves; the weekly job runs every PR check and writes the approved row first);
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -51,6 +53,7 @@ FILES=(
   "shared/qotd/plain-math.ts"
   "shared/social/funnel.ts"
   "scripts/worked-examples/approval.ts"
+  "scripts/worked-examples/weekly-admit.ts"
   "scripts/worked-examples/composition.ts"
   "video-kit/worked-examples/templates/end-card.html"
   "video-kit/worked-examples/templates/cover-card.html"
@@ -658,6 +661,20 @@ ts_plant "F7 verify does not measure the finished mix" scripts/worked-examples/d
 ts_plant "F8 an encoder overshoot retried at the same headroom" scripts/worked-examples/final-mix.ts \
   "      Math.round((headroomDb + overshoot + FINAL_MIX_STEP_DB) * 100) / 100," "      headroomDb," \
   "an encoder overshoot is limited again with that much more headroom"
+
+echo "=== TS: the merge gate dropped (Karl 2026-11-24, SCL-288) ==="
+ts_plant "T74 the trailer check removed: any commit approves" scripts/worked-examples/approval.ts \
+  "  if (!commit.authoredBy.includes(WORKED_EXAMPLES_TASK))" "  if (false)" \
+  "AP2 a commit with neither the trailer nor Karl's merge is refused"
+ts_plant "T75 a failing pull-request check no longer refuses the example" scripts/worked-examples/weekly-admit.ts \
+  "  if (failing.length > 0)" "  if (false)" \
+  "AD1 a failing check refuses the example"
+ts_plant "T76 the database's refusal of the approved row is ignored" scripts/worked-examples/weekly-admit.ts \
+  "  if (!written.ok)" "  if (false)" \
+  "AD2 a database refusal refuses the example"
+ts_plant "T77 the weekly build skips the admission's verdict" scripts/worked-examples/weekly.ts \
+  "      if (!admitted.ok) throw new Error(admitted.reason);" "" \
+  "AD5 the weekly build refuses a failing example"
 
 # The D pilots call the same limiter (SCL-270: "on the finished mix in every pipeline ... the D
 # pilots"); their tests live in tests/ci/video-pilots.test.ts.
