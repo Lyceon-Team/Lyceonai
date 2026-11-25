@@ -45,6 +45,11 @@ MIG6="supabase/migrations/20260918000000_crisis_severance_and_verification.sql"
 MIG7="supabase/migrations/20260921000000_operational_log_retention.sql"
 MIG8="supabase/migrations/20260922000000_seven_year_retention.sql"
 MIG9="supabase/migrations/20260922010000_tutor_lapse_severance.sql"
+# The LATEST migration that (re)creates the entitlements_sync_tutor_conversations trigger:
+# 20261211000000 (SCL-289, the grace deadline) dropped and recreated it on
+# (status, grace_period_ends_at), which turned M49 into a plant on an overwritten copy until it
+# was re-pointed here. The function body (M45-M48) still lives in MIG9.
+MIGTRIG="$(grep -l 'CREATE TRIGGER entitlements_sync_tutor_conversations' supabase/migrations/*.sql | sort | tail -1)"
 RPOL="infra/retention-policy-registry.yaml"
 YAMLLIB="scripts/ci/lib/minimal-yaml.ts"
 SECRETGATE="scripts/ci/secret-class-inventory-check.ts"
@@ -74,6 +79,7 @@ cp "$MIG6" "$BACKUP/mig6.sql"
 cp "$MIG7" "$BACKUP/mig7.sql"
 cp "$MIG8" "$BACKUP/mig8.sql"
 cp "$MIG9" "$BACKUP/mig9.sql"
+cp "$MIGTRIG" "$BACKUP/migtrig.sql"
 cp "$RPOL"       "$BACKUP/retention-policy-registry.yaml"
 cp "$YAMLLIB"    "$BACKUP/minimal-yaml.ts"
 cp "$SECRETGATE" "$BACKUP/secret-class-inventory-check.ts"
@@ -105,6 +111,7 @@ restore() {
   cp "$BACKUP/mig7.sql" "$MIG7"
   cp "$BACKUP/mig8.sql" "$MIG8"
   cp "$BACKUP/mig9.sql" "$MIG9"
+  cp "$BACKUP/migtrig.sql" "$MIGTRIG"
   cp "$BACKUP/retention-policy-registry.yaml" "$RPOL"
   cp "$BACKUP/minimal-yaml.ts" "$YAMLLIB"
   cp "$BACKUP/secret-class-inventory-check.ts" "$SECRETGATE"
@@ -516,8 +523,12 @@ plant M48 "$MIG9" "s.replace('v_active := public.entitlement_active(NEW.profile_
 expect_red M48 "C1.8 — the trigger calls the canonical predicate, not a re-listed status set"
 
 echo "==> (M49) the trigger watches the wrong column"
-plant M49 "$MIG9" "s.replace('AFTER INSERT OR UPDATE OF status ON public.entitlements', 'AFTER INSERT OR UPDATE OF tier ON public.entitlements', 1)"
-expect_red M49 "C1.7 — the predicate reads only status, which is what makes UPDATE OF status sufficient"
+plant M49 "$MIGTRIG" "s.replace('AFTER INSERT OR UPDATE OF status, grace_period_ends_at ON public.entitlements', 'AFTER INSERT OR UPDATE OF tier, grace_period_ends_at ON public.entitlements', 1)"
+expect_red M49 "C1.7 — the trigger fires on every column the predicate reads"
+
+echo "==> (M49b) the trigger stops watching the grace deadline the predicate now reads (SCL-289)"
+plant M49b "$MIGTRIG" "s.replace('AFTER INSERT OR UPDATE OF status, grace_period_ends_at ON public.entitlements', 'AFTER INSERT OR UPDATE OF status ON public.entitlements', 1)"
+expect_red M49b "C1.7 — the trigger fires on every column the predicate reads"
 
 # =============================================================================
 # Retention policy registry (Doc 06D §9.1 / owner ruling F1) — the file that

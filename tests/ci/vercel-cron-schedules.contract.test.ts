@@ -51,6 +51,9 @@ describe("vercel.json cron schedules (owner ruling 2026-10-09)", () => {
       { path: "/api/internal/calendar-weekly-regen", schedule: "30 5 * * *" },
       { path: "/api/internal/calendar-exam-notify", schedule: "0 21 * * *" },
       { path: "/api/internal/exam-score-renewal", schedule: "0 20 * * *" },
+      // Owner brief "Founding lapse flow" (Karl, 2026-11-24; SCL-289): after the renewal job, so
+      // a subscription it set to cancel at period end the same day is skipped.
+      { path: "/api/internal/billing-lapse", schedule: "30 20 * * *" },
       // Doc 10B §8.4 daily publish check (owner answer 5, 2026-10-11: 07:00-07:59 Chicago go-live
       // accepted): two UTC entries, the job acts only in the 07 Chicago hour, so one fires in CDT
       // and the other in CST.

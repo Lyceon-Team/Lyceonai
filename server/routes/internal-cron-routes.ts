@@ -45,6 +45,10 @@ import {
 } from "../services/calendar/accountability-job.js";
 import { runExamScoreRenewal } from "../services/exam-score-renewal/job.js";
 import {
+  defaultBillingLapseDeps,
+  runBillingLapseJob,
+} from "../lib/stripe/billing-lapse.js";
+import {
   defaultOpsAlertDeps,
   defaultSendAlert,
   runMonitoredQotdSchedule,
@@ -763,6 +767,48 @@ router.get(
         err,
       );
       res.status(500).json({ error: "exam_score_renewal_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/billing-lapse
+ * @spec [Doc 01 §21, §23; owner brief "Founding lapse flow" (Karl, 2026-11-24) rulings 2, 3, 4,
+ *        7, 8; SCL-289] | @implemented [2026-11-24]
+ *
+ * plain English: once a day, (1) warn the payer of a renewing subscription with no card at 14, 7
+ * and 2 days out, (2) give a past_due row with no deadline its deadline (earliest unpaid invoice +
+ * 7 days), and (3) cancel, in Stripe, every subscription whose deadline has passed unpaid, and tell
+ * the payer. Every email is claimed in `billing_lapse_notices` first, so a rerun sends nothing
+ * twice; a failed send is released and retried on the next run.
+ *
+ * SCHEDULE: 20:30 UTC (`30 20 * * *`), after the 20:00 renewal job, so a subscription that job set
+ * to cancel at period end the same day is already skipped (ruling 8). 14:30 CST / 15:30 CDT,
+ * outside quiet hours.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404. 500 when any
+ * subscription failed, so the run shows red; the others still ran.
+ */
+router.get(
+  "/billing-lapse",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runBillingLapseJob(defaultBillingLapseDeps());
+      res
+        .status(summary.ok ? 200 : 500)
+        .json({ ok: summary.ok, job: "billing_lapse", summary });
+    } catch (err) {
+      logger.error(
+        "BILLING_LAPSE",
+        "billing_lapse_job_error",
+        "Scheduled billing lapse job failed",
+        err,
+      );
+      res.status(500).json({ error: "billing_lapse_failed" });
     }
   },
 );

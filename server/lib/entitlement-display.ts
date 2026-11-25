@@ -12,8 +12,9 @@
  * call this and nothing else.
  *
  * THE RULE, STATED ONCE (owner ruling 2026-09-03).
- * `entitlement_active(profile_id)` — `status IN ('active','past_due','trialing')`,
- * verified against the live function body — is the STANDING-GOOD predicate: is
+ * `entitlement_active(profile_id)` — `status IN ('active','trialing')`, or
+ * `past_due` until its grace deadline (SCL-289, migration 20261211000000) — is the
+ * STANDING-GOOD predicate: is
  * billing in good order? `entitlements.tier` is the PRODUCT: what was bought.
  * Both are needed and neither is redundant. A surface consults both THROUGH
  * THIS FUNCTION, never one branch through one and the other branch through the
@@ -39,8 +40,8 @@ import type { EntitlementStatus, EntitlementTier } from "./account";
 /**
  * Statuses that mean a payment needs the customer's attention.
  *
- * `past_due` is IN the standing-good set — SCL-029 rules a student mid-retry
- * entitled, "a student whose card is mid-retry does not lose their tutor" — so
+ * `past_due` is IN the standing-good set until its grace deadline (SCL-289) —
+ * SCL-029 rules a student mid-retry entitled, "a student whose card is mid-retry does not lose their tutor" — so
  * it is simultaneously entitled and worth mentioning. That combination is the
  * whole reason this returns three independent booleans rather than one enum:
  * the guardian lockout existed because one surface treated "worth mentioning"

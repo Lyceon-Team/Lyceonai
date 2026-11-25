@@ -788,8 +788,8 @@ describe("the handoff to the webhook — access ends at the right moment", () =>
     );
 
     const after = state.subs.get("sub_handoff");
-    // STILL `past_due`, which `entitlement_active` grants
-    // (20260616120000_entitlement_active_include_trialing.sql). Access has not
+    // STILL `past_due`, which `entitlement_active` grants until its grace deadline
+    // (20261211000000_billing_lapse.sql, SCL-289; 20260616120000 before). Access has not
     // ended, which is the ruling: never earlier than doing nothing would.
     expect(after?.status).toBe("past_due");
     // And the revoking event is scheduled, not sent.

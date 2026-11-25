@@ -106,11 +106,29 @@ vi.mock("../../server/lib/stripe/client", async () => {
   };
 });
 
+/**
+ * A read or update that finds no rows. SCL-289's invoice handlers read and write
+ * `entitlements` by subscription id; this suite asks only for a definite disposition, so an
+ * empty table is the honest shape (a subscription we hold no row for settles as processed).
+ */
+function emptyQuery(): Record<string, unknown> {
+  const q: Record<string, unknown> = {};
+  for (const m of ["select", "eq", "is", "not", "order", "in", "gte", "lte"]) {
+    q[m] = (): Record<string, unknown> => q;
+  }
+  q.then = (
+    resolve: (v: { data: unknown[]; error: null }) => unknown,
+  ): unknown => resolve({ data: [], error: null });
+  return q;
+}
+
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: () => ({
       insert: dbMocks.insert,
       delete: () => ({ eq: dbMocks.delete }),
+      select: () => emptyQuery(),
+      update: () => emptyQuery(),
     }),
   },
 }));
@@ -150,6 +168,21 @@ import {
 
 /** Data object shapes sufficient for the handler to reach its disposition. */
 function dataObjectFor(eventType: string): Record<string, unknown> {
+  if (eventType.startsWith("invoice.")) {
+    // An Invoice as API 2026-02-25.clover sends it: the subscription under `parent`.
+    return {
+      id: "in_test_disposition",
+      object: "invoice",
+      attempt_count: 1,
+      amount_due: 5999,
+      currency: "usd",
+      hosted_invoice_url: null,
+      parent: {
+        type: "subscription_details",
+        subscription_details: { subscription: "sub_test_disposition" },
+      },
+    };
+  }
   if (eventType.startsWith("checkout.session.")) {
     return {
       id: "cs_test_disposition",

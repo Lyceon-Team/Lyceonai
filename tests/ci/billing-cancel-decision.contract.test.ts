@@ -153,7 +153,7 @@ describe("decideCancellation — every status is answered", () => {
       const plan = decideCancellation(input({ status }));
       expect(plan.kind, status).toBe("immediate");
       // Null, not `now`. `entitlement_active` grants none of these
-      // (20260616120000), so there is no access left to end — and a date here
+      // (20260616120000; still none since 20261211000000, SCL-289), so there is no access left to end — and a date here
       // would be a promise about access the customer does not have.
       expect(plan.kind === "immediate" ? plan.accessEndsAt : "x").toBeNull();
     }
