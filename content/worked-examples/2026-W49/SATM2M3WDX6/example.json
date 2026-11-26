@@ -1,0 +1,42 @@
+{
+  "question_id": "SATM2M3WDX6",
+  "skill_code": "Nonlinear Functions",
+  "post_on": "2026-12-06",
+  "hook": {
+    "type": "contrarian",
+    "line": "h(x) = −2x² + 28x − 89. The max isn't −89. So what is it?",
+    "voice": "That last number looks like the answer. It isn't. Let's see why."
+  },
+  "question_voice": "A parabola that opens down, written the long way, and we want its highest value.",
+  "signature_move": "Find the vertex: x = −b ÷ 2a, then plug it back in.",
+  "steps": [
+    {
+      "notepad": "x = −28 ÷ (2 · −2) = 7",
+      "voice": "The top is at negative b over two a. Negative twenty-eight over negative four. Seven."
+    },
+    {
+      "notepad": "h(7) = −98 + 196 − 89",
+      "voice": "Plug seven back in. Negative ninety-eight, plus one ninety-six, minus eighty-nine."
+    },
+    {
+      "notepad": "h(7) = 9",
+      "voice": "That's nine. The highest point on the graph."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "Answer: A) 9",
+    "voice": "Nine. That's A. Quick check: h of six and h of eight are both seven, a little lower, one on each side."
+  },
+  "trap": {
+    "summary": "Reading the constant term, −89, as the maximum and choosing C.",
+    "notepad": [
+      "max = −89 → C ✗",
+      "−89 is h(0), not the top",
+      "h(7) = 9 ✓"
+    ],
+    "voice": "The trap is grabbing negative eighty-nine. That's C. It's just where the graph crosses the y-axis, way below the top."
+  },
+  "check": "−2(x − 7)² + 9 = −2x² + 28x − 98 + 9 = −2x² + 28x − 89.",
+  "takeaway": "The constant term is h(0), not the vertex."
+}

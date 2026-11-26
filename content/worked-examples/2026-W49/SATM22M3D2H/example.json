@@ -1,0 +1,46 @@
+{
+  "question_id": "SATM22M3D2H",
+  "skill_code": "Linear Inequalities in One or Two Variables",
+  "post_on": "2026-12-01",
+  "hook": {
+    "type": "obvious_answer_trap",
+    "line": "Divide −5 < 2 − 3t ≤ 11 by −3. Where does the ≤ end up?",
+    "voice": "Most people get the numbers right here and still pick the wrong answer. Can you?"
+  },
+  "question_voice": "A compound inequality with a negative in front of t, and we want the range for t.",
+  "signature_move": "Solve it like an equation; flip the sign when you multiply or divide by a negative.",
+  "steps": [
+    {
+      "notepad": "−7 < −3t ≤ 9",
+      "voice": "Take two away from all three parts. Negative seven, then negative three t, then nine."
+    },
+    {
+      "notepad": "÷ (−3): flip both signs",
+      "voice": "Now divide everything by negative three. That flips both signs."
+    },
+    {
+      "notepad": "7/3 > t ≥ −3",
+      "voice": "Negative seven over negative three is seven thirds. Nine over negative three is negative three."
+    },
+    {
+      "notepad": "−3 ≤ t < 7/3",
+      "voice": "Read it from small to big. t is at least negative three, and less than seven thirds."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "Answer: A) −3 ≤ t < 7/3",
+    "voice": "That's A. Quick check: t equal to negative three gives eleven, which is allowed. Seven thirds gives negative five, which isn't."
+  },
+  "trap": {
+    "summary": "Flipping the signs but leaving each one at its old end, so the ≤ stays beside 7/3: choosing B.",
+    "notepad": [
+      "−3 < t ≤ 7/3 → B ✗",
+      "the ≤ went with the 9",
+      "9 ÷ −3 = −3: ≤ there ✓"
+    ],
+    "voice": "The trap is keeping the or-equal next to seven thirds. It belonged to the nine, and the nine became negative three. That's B."
+  },
+  "check": "t = −3: 2 + 9 = 11 ≤ 11 holds; t = 7/3: 2 − 7 = −5, and −5 < −5 fails.",
+  "takeaway": "Dividing by a negative flips the signs, and each sign stays with its own number."
+}

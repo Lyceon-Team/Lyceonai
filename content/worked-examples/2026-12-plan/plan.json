@@ -2,14 +2,34 @@
   "month": "2026-12",
   "slots": [
     {
+      "post_on": "2026-12-01",
+      "skill_code": "Linear Inequalities in One or Two Variables",
+      "hook_type": "obvious_answer_trap"
+    },
+    {
       "post_on": "2026-12-02",
       "skill_code": "Nonlinear Functions",
       "hook_type": "speed"
     },
     {
+      "post_on": "2026-12-03",
+      "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+      "hook_type": "challenge"
+    },
+    {
       "post_on": "2026-12-04",
       "skill_code": "Area and Volume",
       "hook_type": "puzzle"
+    },
+    {
+      "post_on": "2026-12-05",
+      "skill_code": "Lines, Angles, and Triangles",
+      "hook_type": "obvious_answer_trap"
+    },
+    {
+      "post_on": "2026-12-06",
+      "skill_code": "Nonlinear Functions",
+      "hook_type": "contrarian"
     }
   ]
 }

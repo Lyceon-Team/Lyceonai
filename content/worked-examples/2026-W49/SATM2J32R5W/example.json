@@ -1,0 +1,208 @@
+{
+  "question_id": "SATM2J32R5W",
+  "skill_code": "Lines, Angles, and Triangles",
+  "post_on": "2026-12-05",
+  "hook": {
+    "type": "obvious_answer_trap",
+    "line": "Similar triangles, and one side is 2x − 1. What's x?",
+    "voice": "Most people find the right side length here and still miss the question. Will you?"
+  },
+  "question_voice": "Two triangles with the same shape, and one side of the small one is written with x.",
+  "signature_move": "Find the scale factor from matching sides, then apply it to every length.",
+  "steps": [
+    {
+      "notepad": "18 ÷ 42 = 3/7",
+      "voice": "Match the sides. S T is eighteen, and its partner V W is forty-two. That's three sevenths."
+    },
+    {
+      "notepad": "12 ÷ 28 = 3/7 ✓",
+      "voice": "R T against U W checks out too. Twelve over twenty-eight. Three sevenths again."
+    },
+    {
+      "notepad": "RS = 3/7 · 35 = 15",
+      "voice": "So R S is three sevenths of thirty-five. Fifteen."
+    },
+    {
+      "notepad": "2x − 1 = 15 → x = 8",
+      "voice": "But they want x. Two x minus one is fifteen, so two x is sixteen. x is eight."
+    }
+  ],
+  "answer": {
+    "letter": "B",
+    "notepad": "Answer: B) 8",
+    "voice": "Eight. That's B. Quick check: two times eight, minus one, is fifteen, and fifteen over thirty-five is three sevenths."
+  },
+  "trap": {
+    "summary": "Stopping at RS = 15 and choosing C, when the question asks for x.",
+    "notepad": [
+      "RS = 15 → C ✗",
+      "they asked for x",
+      "2x − 1 = 15 → x = 8 ✓"
+    ],
+    "voice": "The trap is stopping at fifteen. That's the side, not x. Fifteen is C, and it's sitting right there in the choices."
+  },
+  "check": "2(8) − 1 = 15, and 15/35 = 18/42 = 12/28 = 3/7.",
+  "takeaway": "Find the side, then answer the question they asked.",
+  "figure": {
+    "box": {
+      "x": [
+        -5,
+        65
+      ],
+      "y": [
+        -6,
+        31
+      ]
+    },
+    "shapes": [
+      {
+        "kind": "polygon",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            15,
+            0
+          ],
+          [
+            1.5,
+            11.91
+          ]
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "R",
+        "at": [
+          -2,
+          -2
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "S",
+        "at": [
+          16.5,
+          -2
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "T",
+        "at": [
+          1.5,
+          14
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "2x − 1",
+        "at": [
+          7.5,
+          -3.5
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "12",
+        "at": [
+          -2.5,
+          6
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "18",
+        "at": [
+          10.5,
+          7.5
+        ]
+      },
+      {
+        "kind": "polygon",
+        "points": [
+          [
+            25,
+            0
+          ],
+          [
+            60,
+            0
+          ],
+          [
+            28.5,
+            27.78
+          ]
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "U",
+        "at": [
+          23,
+          -2
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "V",
+        "at": [
+          61.5,
+          -2
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "W",
+        "at": [
+          28.5,
+          30
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "35",
+        "at": [
+          42.5,
+          -3.5
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "28",
+        "at": [
+          23.5,
+          14
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "42",
+        "at": [
+          48,
+          16
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "× 7/3",
+        "at": [
+          20,
+          22
+        ],
+        "when": "step-1"
+      },
+      {
+        "kind": "label",
+        "text": "15",
+        "at": [
+          7.5,
+          3
+        ],
+        "when": "step-3"
+      }
+    ]
+  }
+}

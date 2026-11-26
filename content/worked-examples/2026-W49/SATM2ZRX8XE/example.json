@@ -1,0 +1,46 @@
+{
+  "question_id": "SATM2ZRX8XE",
+  "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+  "post_on": "2026-12-03",
+  "hook": {
+    "type": "challenge",
+    "line": "y = x² − 3x + 1 and y = 2x − 7. How many times do they cross?",
+    "voice": "Bet you can answer this one without solving anything. Ready?"
+  },
+  "question_voice": "A parabola and a line, and we want to know how many points they share.",
+  "signature_move": "Set the two equations equal and solve, or graph both and count where they cross.",
+  "steps": [
+    {
+      "notepad": "Graph both: count crossings",
+      "voice": "Fastest way: graph both, in Desmos or on your calculator. The line runs under the parabola and never touches it."
+    },
+    {
+      "notepad": "x² − 3x + 1 = 2x − 7",
+      "voice": "Now by hand, to be sure. Set them equal."
+    },
+    {
+      "notepad": "x² − 5x + 8 = 0",
+      "voice": "Move everything to one side. x squared, minus five x, plus eight, equals zero."
+    },
+    {
+      "notepad": "b² − 4ac = 25 − 32 = −7",
+      "voice": "Check the discriminant. Twenty-five minus thirty-two. Negative seven. Below zero means no real solutions."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "Answer: A) 0",
+    "voice": "Zero. That's A. Quick check: the gap between them is smallest at x equals two and a half, and even there it's one and three quarters."
+  },
+  "trap": {
+    "summary": "Assuming a line always crosses a parabola twice and choosing C.",
+    "notepad": [
+      "parabola + line = 2? → C ✗",
+      "discriminant −7 < 0",
+      "no crossings → 0 ✓"
+    ],
+    "voice": "The trap is thinking a parabola and a line always cross twice. They can miss each other completely. Two is C, and it's wrong."
+  },
+  "check": "x² − 5x + 8 = (x − 2.5)² + 1.75 > 0, so the graphs never meet.",
+  "takeaway": "Negative discriminant: the line and the parabola never meet."
+}
