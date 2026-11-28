@@ -41,6 +41,8 @@ const TYPES = {
   ".ico": "image/x-icon",
   ".woff2": "font/woff2",
   ".txt": "text/plain; charset=utf-8",
+  // Each public page's Markdown copy (vercel.json sets the same type).
+  ".md": "text/markdown; charset=utf-8",
   ".xml": "application/xml",
   // The homepage walkthrough (client/public/media/), typed as Vercel serves them.
   ".mp4": "video/mp4",
