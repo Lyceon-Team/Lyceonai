@@ -107,6 +107,13 @@
       "continue": true
     },
     {
+      "src": "^/.+\\.md$",
+      "headers": {
+        "Content-Type": "text/markdown; charset=utf-8"
+      },
+      "continue": true
+    },
+    {
       "src": "^/api(?:/.*)?$",
       "dest": "/api/index"
     },

@@ -40,6 +40,10 @@
  *    (shared/seo/content-gate.ts) checks each content page's data and its rendered HTML, and any
  *    problem fails the build: an unapproved or unsourced page cannot deploy (plan row C3). The
  *    five blog posts are content pages too since the C4 rewrite and are gated the same way.
+ *  - Markdown copies (owner brief "AI visibility", Karl, 2026-11-28): every indexable page also
+ *    gets `<path>.md`, converted from the `<main>` this same render produced
+ *    (shared/seo/markdown-twin.ts), and links it from its head; /llms.txt lists them all. A page
+ *    whose markup the converter cannot read fails the build, like any other render error.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -87,6 +91,13 @@ import {
 } from "@shared/seo/route-registry";
 import { legalFetch } from "../../../vite-plugin-legal-content";
 import { CONTENT_PAGES, contentPageAt } from "@shared/content/pages";
+import {
+  llmsTxt,
+  pageMarkdown,
+  twinFileFor,
+  twinPathFor,
+  type MarkdownTwinPage,
+} from "@shared/seo/markdown-twin";
 import { qotdSampleDates } from "@shared/content/qotd-samples";
 import type { ContentPage } from "../../../packages/shared/src/seo-content-schema";
 import {
@@ -114,6 +125,10 @@ export type PrerenderedSite = {
   /** dist/public/app.html — the SPA shell for every route that is not prerendered. */
   shellHtml: string;
   sitemapXml: string;
+  /** One Markdown copy per indexable page, written to dist/public/<file>. */
+  markdownTwins: { path: string; file: string; markdown: string }[];
+  /** dist/public/llms.txt */
+  llmsTxt: string;
   /** Where the Question of the Day archive came from, and the days built from it. */
   qotdArchive: {
     source: QotdArchiveSource["source"];
@@ -390,6 +405,8 @@ export async function prerenderSite(options: {
       qotd: qotdDays.map((d) => ({ date: d.qotd_date })),
     };
     const pages: PrerenderedPage[] = [];
+    const markdownTwins: PrerenderedSite["markdownTwins"] = [];
+    const twinPages: MarkdownTwinPage[] = [];
     for (const page of expandPrerenderPages(registry, content)) {
       const meta = resolvePublicMeta(page.path, qotdDays);
       if (!meta)
@@ -398,11 +415,41 @@ export async function prerenderSite(options: {
         );
       await loadPageQueries(page.path, qotdDays);
       const body = await renderAppHtml(page.path);
+      const markdownHref = page.indexable
+        ? `${BASE_URL}${twinPathFor(page.path)}`
+        : undefined;
       pages.push({
         ...page,
         file: outputFileFor(page.path),
-        html: withBody(withHead(options.template, renderPageHead(meta)), body),
+        html: withBody(
+          withHead(
+            options.template,
+            renderPageHead(meta, markdownHref ? { markdownHref } : {}),
+          ),
+          body,
+        ),
       });
+      if (markdownHref) {
+        let markdown: string;
+        try {
+          markdown = pageMarkdown(body, BASE_URL);
+        } catch (error) {
+          // The original error, with the page named: the build log must say which page failed.
+          if (error instanceof Error)
+            error.message = `prerender ${page.path}: Markdown copy failed: ${error.message}`;
+          throw error;
+        }
+        markdownTwins.push({
+          path: page.path,
+          file: twinFileFor(page.path),
+          markdown,
+        });
+        twinPages.push({
+          path: page.path,
+          title: meta.title,
+          description: meta.description,
+        });
+      }
     }
 
     assertContentPagesPublishable(
@@ -425,6 +472,8 @@ export async function prerenderSite(options: {
       ),
       shellHtml: options.template,
       sitemapXml: buildSitemapXml(pages, BASE_URL),
+      markdownTwins,
+      llmsTxt: llmsTxt(twinPages, BASE_URL),
       qotdArchive: {
         source: loaded.source,
         days: qotdDays,

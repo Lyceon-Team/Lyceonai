@@ -194,6 +194,12 @@ function fakeDeps(
     },
     excludedProfileIds: async () => ["00000000-0000-4000-8000-000000000001"],
     report: async () => report,
+    aiCrawlers: async (week) => ({
+      week_start: week,
+      total: 0,
+      by_bot: [],
+      top_paths: [],
+    }),
     post: async (text) => {
       if (outcome === "posted") posts.push(text);
       return outcome;

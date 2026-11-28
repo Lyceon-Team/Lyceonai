@@ -32,10 +32,19 @@
  *
  * Edge cases: an empty week posts zeros (a quiet week is news too). A change against a previous
  * week of 0 shows the difference only, never a percentage.
+ *
+ * AI crawlers (owner brief "AI visibility", Karl, 2026-11-28, item 4): one more line for the same
+ * week, AI bot visits by bot and the 5 most visited paths (`ai_crawler_weekly`, counts only; no
+ * person is behind these numbers). A failure to read them does not hold the report back: the line
+ * says "not available" and the failure is logged, since the student numbers are the report's job.
  */
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { feedbackSlackEnvSchema } from "../../packages/shared/src/env";
+import {
+  aiCrawlerWeekSchema,
+  type AiCrawlerWeek,
+} from "../../packages/shared/src/ai-crawler-schema";
 import {
   growthReportSchema,
   type GrowthReport,
@@ -154,8 +163,33 @@ function studyTimeLine(
   return `• ${label}: *${shown(current)}* (week before: ${shown(previous)})`;
 }
 
-/** The Slack message. Counts only; every label is our own text. */
-export function formatGrowthReport(report: GrowthReport): string {
+export const AI_CRAWLERS_NOT_AVAILABLE = "not available";
+
+/** The AI crawler line: the week's visits, by bot, then the 5 most visited paths. */
+export function aiCrawlerLines(week: AiCrawlerWeek | null): string[] {
+  if (week === null) return [`• AI bot visits: ${AI_CRAWLERS_NOT_AVAILABLE}`];
+  const byBot =
+    week.by_bot.length === 0
+      ? "none"
+      : week.by_bot.map((b) => `${b.bot} ${n(b.visits)}`).join(", ");
+  const paths =
+    week.top_paths.length === 0
+      ? "none"
+      : week.top_paths.map((p) => `${p.path} ${n(p.visits)}`).join(", ");
+  return [
+    `• AI bot visits: *${n(week.total)}* (by bot: ${byBot})`,
+    `    top 5 paths: ${paths}`,
+  ];
+}
+
+/**
+ * The Slack message. Counts only; every label is our own text. `aiCrawlers` is the same week's AI
+ * crawler counts (null: they could not be read); left out, the message has no AI crawler line.
+ */
+export function formatGrowthReport(
+  report: GrowthReport,
+  aiCrawlers?: AiCrawlerWeek | null,
+): string {
   const w = report.week;
   const p = report.previous;
   const lines = [
@@ -181,6 +215,7 @@ export function formatGrowthReport(report: GrowthReport): string {
     line("Upgrades", w.upgrades, p.upgrades),
     "    ALPHA and paid are not split here: only Stripe records the code.",
     "_Students only; under-13, deleted, internal and test accounts excluded._",
+    ...(aiCrawlers === undefined ? [] : aiCrawlerLines(aiCrawlers)),
   ];
   return escapeMrkdwn(lines.join("\n"));
 }
@@ -199,6 +234,8 @@ export type GrowthReportDeps = {
   release: (weekStart: string) => Promise<void>;
   excludedProfileIds: () => Promise<string[]>;
   report: (weekStart: string, excluded: string[]) => Promise<unknown>;
+  /** `ai_crawler_weekly(week_start)`. */
+  aiCrawlers: (weekStart: string) => Promise<unknown>;
   post: (text: string) => Promise<GrowthPostOutcome>;
 };
 
@@ -230,7 +267,9 @@ export async function runGrowthReport(
     const report = growthReportSchema.parse(
       await deps.report(weekStart, excluded),
     );
-    outcome = await deps.post(formatGrowthReport(report));
+    outcome = await deps.post(
+      formatGrowthReport(report, await readAiCrawlers(deps, weekStart)),
+    );
     if (outcome === "posted") {
       await deps.markPosted(weekStart);
       logger.info(
@@ -253,6 +292,27 @@ export async function runGrowthReport(
     week_start: weekStart,
     reason: outcome === "misconfigured" ? "misconfigured" : "failed",
   };
+}
+
+/** The week's AI crawler counts, or null (logged) when they cannot be read. */
+async function readAiCrawlers(
+  deps: GrowthReportDeps,
+  weekStart: string,
+): Promise<AiCrawlerWeek | null> {
+  try {
+    return aiCrawlerWeekSchema.parse(await deps.aiCrawlers(weekStart));
+  } catch (error) {
+    logger.warn(
+      "GROWTH_REPORT",
+      "growth_report_ai_crawlers_unavailable",
+      "AI crawler counts could not be read; the report posts without them",
+      {
+        week_start: weekStart,
+        error_name: error instanceof Error ? error.name : "unknown",
+      },
+    );
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -392,6 +452,7 @@ export function liveGrowthReportDeps(): GrowthReportDeps {
         p_week_start: week,
         p_excluded: excluded,
       }),
+    aiCrawlers: (week) => rpc("ai_crawler_weekly", { p_week_start: week }),
     post: liveSlackPost,
   };
 }

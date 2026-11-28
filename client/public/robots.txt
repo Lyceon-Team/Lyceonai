@@ -13,4 +13,11 @@ Allow: /
 Disallow: /api/
 Disallow: /auth/
 
+# AI crawlers (owner brief "AI visibility", Karl, 2026-11-28): GPTBot, OAI-SearchBot, ChatGPT-User,
+# ClaudeBot, Claude-User, PerplexityBot, Perplexity-User, Google-Extended, Applebot-Extended,
+# Bytespider and CCBot are all allowed, by the group above. They get no group of their own on
+# purpose: a crawler named in its own group ignores the "*" group, so it would lose the two
+# Disallow lines. Each page's Markdown copy (<path>.md) and /llms.txt are allowed the same way.
+# tests/ci/ai-visibility.crawlers.test.ts holds this.
+
 Sitemap: https://lyceon.ai/sitemap.xml

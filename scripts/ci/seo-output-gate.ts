@@ -9,6 +9,12 @@
  *     registry row is prerendered but not indexable, which must be noindex and NOT in it.
  * Plus: 404.html and app.html exist and are noindex, and no client/public/sitemap.xml exists.
  *
+ * @spec [owner brief "AI visibility" (Karl, 2026-11-28) items 1-3] | @implemented [2026-11-28] |
+ * MARKDOWN COPIES. Every sitemap URL has its Markdown copy (<path>.md, index.md for `/`), links it
+ * with rel="alternate" type="text/markdown", and is listed in llms.txt, which lists nothing that
+ * is not in the sitemap. (Other .md files ship and are not copies: the font licences and the legal
+ * documents' own sources under /legal/<slug>/v<n>/en.md.)
+ *
  * Exit 1 with every failure listed. `pnpm run route:validate` covers App.tsx ↔ registry; this
  * covers registry ↔ deployed output.
  *
@@ -248,7 +254,7 @@ if (!existsSync(withheldFile)) {
       ? readdirSync(dir).flatMap((name) => {
           const full = join(dir, name);
           if (statSync(full).isDirectory()) return shipped(full);
-          return /\.(js|html|xml|json|txt)$/.test(name) ? [full] : [];
+          return /\.(js|html|xml|json|txt|md)$/.test(name) ? [full] : [];
         })
       : [];
   const shippedText = [
@@ -277,6 +283,42 @@ if (!existsSync(withheldFile)) {
   }
 }
 
+// Markdown copies and llms.txt (see header).
+const twinPathOf = (urlPath: string): string =>
+  urlPath === "/" ? "/index.md" : `${urlPath}.md`;
+const expectedTwins = new Set(
+  locs.map((loc) =>
+    twinPathOf(loc === `${BASE_URL}/` ? "/" : loc.slice(BASE_URL.length)),
+  ),
+);
+const llmsPath = join(OUT, "llms.txt");
+const llms = existsSync(llmsPath) ? readFileSync(llmsPath, "utf8") : "";
+if (llms === "") fail("llms.txt missing or empty");
+const llmsUrls = [...llms.matchAll(/^- \[[^\]]+\]\((\S+)\): \S/gm)].map(
+  (m) => m[1] ?? "",
+);
+for (const loc of locs) {
+  const urlPath = loc === `${BASE_URL}/` ? "/" : loc.slice(BASE_URL.length);
+  const twin = twinPathOf(urlPath);
+  const twinFile = join(OUT, twin.slice(1));
+  if (!existsSync(twinFile) || readFileSync(twinFile, "utf8").trim() === "")
+    fail(`sitemap URL ${loc} has no Markdown copy (${twin})`);
+  const file =
+    urlPath === "/" ? "index.html" : `${urlPath.slice(1)}/index.html`;
+  if (
+    existsSync(join(OUT, file)) &&
+    !readFileSync(join(OUT, file), "utf8").includes(
+      `<link rel="alternate" type="text/markdown" href="${BASE_URL}${twin}" />`,
+    )
+  )
+    fail(`${file} does not link its Markdown copy ${twin}`);
+  if (!llmsUrls.includes(`${BASE_URL}${twin}`))
+    fail(`llms.txt does not list ${twin}`);
+}
+for (const url of llmsUrls)
+  if (!expectedTwins.has(url.slice(BASE_URL.length)))
+    fail(`llms.txt lists ${url}, which is not the copy of a sitemap URL`);
+
 if (failures.length > 0) {
   err(`SEO OUTPUT GATE FAILED (${failures.length}):`);
   for (const f of failures) err(`  - ${f}`);
@@ -287,6 +329,9 @@ out(
 );
 out(
   `ENTRY CHUNK OK: ${entryName ?? "?"} ${(entryGzip / 1024).toFixed(1)} KB gzip (budget ${ENTRY_GZIP_BUDGET_BYTES / 1024} KB); no Supabase client; no content-page copy (${pagesWithMarkers} pages checked by marker)`,
+);
+out(
+  `MARKDOWN COPIES OK: ${expectedTwins.size} copies, each linked from its page and listed in llms.txt (${llmsUrls.length} entries)`,
 );
 out(
   `SCHEDULED POSTS OK: ${withheldChecked} withheld post(s) have no page, no sitemap entry and no copy in the build`,

@@ -9,7 +9,9 @@
  *   - <route>/index.html for each public page (index.html for `/`),
  *   - 404.html (noindex) for every path nothing else answers,
  *   - app.html, the untouched SPA shell vercel.json hands the signed-in routes,
- *   - sitemap.xml, generated from the registry with content-dated lastmod.
+ *   - sitemap.xml, generated from the registry with content-dated lastmod,
+ *   - <route>.md (index.md for `/`), each indexable page's Markdown copy, and llms.txt listing
+ *     them (owner brief "AI visibility", Karl, 2026-11-28).
  * Then it deletes dist/prerender, so the SSR bundle never ships.
  *
  * Fails (exit 1) on any render error, missing metadata or registry problem: a page that cannot be
@@ -57,6 +59,12 @@ for (const page of site.pages) {
 }
 fs.writeFileSync(path.join(publicDir, "404.html"), site.notFoundHtml);
 fs.writeFileSync(path.join(publicDir, "sitemap.xml"), site.sitemapXml);
+for (const twin of site.markdownTwins) {
+  const out = path.join(publicDir, twin.file);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, twin.markdown);
+}
+fs.writeFileSync(path.join(publicDir, "llms.txt"), site.llmsTxt);
 fs.rmSync(ssrDir, { recursive: true, force: true });
 
 console.log(
@@ -68,5 +76,5 @@ if (site.qotdArchive.withheldStemRepeatsPassage.length > 0) {
   );
 }
 console.log(
-  `PRERENDERED ${site.pages.length} pages (${site.pages.filter((p) => p.indexable).length} in sitemap.xml) + 404.html + app.html`,
+  `PRERENDERED ${site.pages.length} pages (${site.pages.filter((p) => p.indexable).length} in sitemap.xml) + ${site.markdownTwins.length} Markdown copies + llms.txt + 404.html + app.html`,
 );
