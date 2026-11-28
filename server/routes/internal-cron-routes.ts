@@ -4,6 +4,8 @@ import { z } from "zod";
 import { logger } from "../logger.js";
 import { getSupabaseAdmin } from "../middleware/supabase-auth.js";
 import { drainAllPendingLegalAcceptances } from "../lib/legal-acceptance.js";
+import { aiCrawlerVisitSchema } from "../../packages/shared/src/ai-crawler-schema.js";
+import { countedPath } from "../../shared/seo/ai-crawlers.js";
 import {
   executeDueDeletions,
   isDeletionLifecycleV2Enabled,
@@ -1283,6 +1285,49 @@ router.get(
       );
       res.status(500).json({ error: "growth_report_failed" });
     }
+  },
+);
+
+/**
+ * POST /api/internal/ai-crawler-visit
+ * @spec [owner brief "AI visibility: markdown copies + AI crawler tracking" (Karl, 2026-11-28)
+ *        item 4] | @implemented [2026-11-28]
+ *
+ * plain English: the routing middleware (middleware.ts, server/lib/ai-crawler-middleware.ts)
+ * posts `{bot, path}` here once per AI crawler request; this adds one to today's count
+ * (`record_ai_crawler_visit`). The body is parsed strictly and the path is reduced again with
+ * `countedPath`, so whatever reaches the table is a public path or "(other)", whoever sent it.
+ * Nothing about the request is logged but the bot's name on failure.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404. Bad body => 400.
+ */
+router.post(
+  "/ai-crawler-visit",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    const parsed = aiCrawlerVisitSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_visit" });
+      return;
+    }
+    const { error } = await getSupabaseAdmin().rpc("record_ai_crawler_visit", {
+      p_bot: parsed.data.bot,
+      p_path: countedPath(parsed.data.path),
+    });
+    if (error) {
+      logger.error(
+        "AI_CRAWLERS",
+        "ai_crawler_visit_record_failed",
+        "Recording an AI crawler visit failed",
+        { bot: parsed.data.bot, code: error.code },
+      );
+      res.status(500).json({ error: "record_failed" });
+      return;
+    }
+    res.status(204).end();
   },
 );
 

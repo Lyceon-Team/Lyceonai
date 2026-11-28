@@ -12,6 +12,9 @@
  *
  * edge cases:
  *  - A page with no jsonLd gets no JSON-LD script at all.
+ *  - `markdownHref` (owner brief "AI visibility", Karl, 2026-11-28, item 3): an indexable page
+ *    links its Markdown copy with `<link rel="alternate" type="text/markdown">`, absolute like the
+ *    canonical. A page without a copy (noindex, the 404) gets no such link.
  */
 import { DEFAULT_OG_IMAGE } from "./structured-data";
 import { NOT_FOUND_META, type PublicMeta } from "./public-meta";
@@ -37,7 +40,10 @@ function jsonLdScript(data: Record<string, unknown>): string {
   return `<script type="application/ld+json">${json}</script>`;
 }
 
-export function renderPageHead(meta: PublicMeta): string {
+export function renderPageHead(
+  meta: PublicMeta,
+  options: { markdownHref?: string } = {},
+): string {
   const title = escapeHtml(meta.title);
   const description = escapeHtml(meta.description);
   const canonical = escapeHtml(meta.canonical);
@@ -46,6 +52,11 @@ export function renderPageHead(meta: PublicMeta): string {
     `<title>${title}</title>`,
     `<meta name="description" content="${description}" />`,
     `<link rel="canonical" href="${canonical}" />`,
+    ...(options.markdownHref
+      ? [
+          `<link rel="alternate" type="text/markdown" href="${escapeHtml(options.markdownHref)}" />`,
+        ]
+      : []),
     ...(meta.noindex ? [`<meta name="robots" content="noindex" />`] : []),
     `<meta property="og:type" content="website" />`,
     `<meta property="og:site_name" content="Lyceon" />`,

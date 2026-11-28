@@ -603,6 +603,33 @@ COMMENT ON FUNCTION public.actor_id_integrity_violations() IS 'Doc 05E §6 INV-0
 
 
 --
+-- Name: ai_crawler_weekly(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ai_crawler_weekly(p_week_start date) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH week AS (
+    SELECT bot, path, visits
+      FROM public.ai_crawler_visits
+     WHERE visit_date >= p_week_start AND visit_date < p_week_start + 7
+  )
+  SELECT jsonb_build_object(
+    'week_start', to_char(p_week_start, 'YYYY-MM-DD'),
+    'total', COALESCE((SELECT sum(visits) FROM week), 0)::integer,
+    'by_bot', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object('bot', bot, 'visits', n) ORDER BY n DESC, bot)
+        FROM (SELECT bot, sum(visits)::integer AS n FROM week GROUP BY bot) b), '[]'::jsonb),
+    'top_paths', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object('path', path, 'visits', n) ORDER BY n DESC, path)
+        FROM (SELECT path, sum(visits)::integer AS n FROM week GROUP BY path
+               ORDER BY n DESC, path LIMIT 5) p), '[]'::jsonb)
+  );
+$$;
+
+
+--
 -- Name: analytics_funnel_claim(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -14200,6 +14227,21 @@ $$;
 
 
 --
+-- Name: record_ai_crawler_visit(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_ai_crawler_visit(p_bot text, p_path text) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  INSERT INTO public.ai_crawler_visits (visit_date, bot, path, visits)
+  VALUES ((now() AT TIME ZONE 'America/Chicago')::date, p_bot, p_path, 1)
+  ON CONFLICT (visit_date, bot, path)
+  DO UPDATE SET visits = public.ai_crawler_visits.visits + 1;
+$$;
+
+
+--
 -- Name: record_campaign_send(text, text, text, timestamp with time zone, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -18552,6 +18594,28 @@ CREATE TABLE public.accountability_state (
 --
 
 COMMENT ON TABLE public.accountability_state IS 'Owner brief 2026-10-13 (guardian accountability): the missed-planned-day run per student (consecutive_missed, alert_open, last_evaluated_date in the student''s calendar dates) and the digest day''s block completion. Written ONLY by accountability_record_day_outcomes. Service role only. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: ai_crawler_visits; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_crawler_visits (
+    visit_date date NOT NULL,
+    bot text NOT NULL,
+    path text NOT NULL,
+    visits integer DEFAULT 1 NOT NULL,
+    CONSTRAINT ai_crawler_visits_bot_check CHECK ((bot = ANY (ARRAY['GPTBot'::text, 'OAI-SearchBot'::text, 'ChatGPT-User'::text, 'ClaudeBot'::text, 'Claude-User'::text, 'PerplexityBot'::text, 'Perplexity-User'::text, 'Google-Extended'::text, 'Applebot-Extended'::text, 'Bytespider'::text, 'CCBot'::text]))),
+    CONSTRAINT ai_crawler_visits_path_check CHECK (((path = '(other)'::text) OR ((path ~ '^/[a-z0-9./-]*$'::text) AND (char_length(path) <= 200)))),
+    CONSTRAINT ai_crawler_visits_visits_check CHECK ((visits > 0))
+);
+
+
+--
+-- Name: TABLE ai_crawler_visits; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.ai_crawler_visits IS 'AI crawler visits per America/Chicago day, bot and public path (owner brief "AI visibility", 2026-11-28). Counts only: no IP, no User-Agent string, nothing about a person.';
 
 
 --
@@ -23142,6 +23206,14 @@ ALTER TABLE ONLY public.account_deletion_runtime_config
 
 ALTER TABLE ONLY public.accountability_state
     ADD CONSTRAINT accountability_state_pkey PRIMARY KEY (student_id);
+
+
+--
+-- Name: ai_crawler_visits ai_crawler_visits_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_crawler_visits
+    ADD CONSTRAINT ai_crawler_visits_pkey PRIMARY KEY (visit_date, bot, path);
 
 
 --
@@ -28003,6 +28075,12 @@ ALTER TABLE public.account_deletion_runtime_config_history ENABLE ROW LEVEL SECU
 ALTER TABLE public.accountability_state ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: ai_crawler_visits; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.ai_crawler_visits ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: analytics_funnel_milestones; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -29792,6 +29870,14 @@ GRANT ALL ON FUNCTION public.accountability_student_first_name(p_student_id uuid
 
 REVOKE ALL ON FUNCTION public.actor_id_integrity_violations() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.actor_id_integrity_violations() TO service_role;
+
+
+--
+-- Name: FUNCTION ai_crawler_weekly(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ai_crawler_weekly(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ai_crawler_weekly(p_week_start date) TO service_role;
 
 
 --
@@ -31925,6 +32011,14 @@ GRANT ALL ON FUNCTION public.reconcile_deletion_log() TO service_role;
 
 
 --
+-- Name: FUNCTION record_ai_crawler_visit(p_bot text, p_path text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_ai_crawler_visit(p_bot text, p_path text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_ai_crawler_visit(p_bot text, p_path text) TO service_role;
+
+
+--
 -- Name: FUNCTION record_campaign_send(p_email text, p_campaign text, p_variant text, p_sent_at timestamp with time zone, p_resend_id text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -32625,6 +32719,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.account_deletion_runtime_confi
 --
 
 GRANT SELECT ON TABLE public.accountability_state TO service_role;
+
+
+--
+-- Name: TABLE ai_crawler_visits; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.ai_crawler_visits TO service_role;
 
 
 --
