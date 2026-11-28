@@ -434,10 +434,10 @@ export async function prerenderSite(options: {
         try {
           markdown = pageMarkdown(body, BASE_URL);
         } catch (error) {
-          throw new Error(
-            `prerender ${page.path}: Markdown copy failed: ${error instanceof Error ? error.message : String(error)}`,
-            { cause: error },
-          );
+          // The original error, with the page named: the build log must say which page failed.
+          if (error instanceof Error)
+            error.message = `prerender ${page.path}: Markdown copy failed: ${error.message}`;
+          throw error;
         }
         markdownTwins.push({
           path: page.path,
